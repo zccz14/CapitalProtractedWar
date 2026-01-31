@@ -82,15 +82,16 @@ export interface Signal {
 }
 
 export type SignalStrategyType = 
-  | 'trend_following'   // 趋势跟踪 (动量策略)
-  | 'mean_reversion'    // 均值回归
-  | 'breakout'          // 突破策略
-  | 'random';           // 随机策略 (对照组)
+  | 'trend_following'      // 趋势跟踪 (动量策略)
+  | 'mean_reversion'       // 均值回归
+  | 'breakout'             // 突破策略
+  | 'random'               // 随机策略 (对照组)
+  | 'adaptive_volatility'; // 自适应波动率策略
 
 export interface SignalStrategyConfig {
   type: SignalStrategyType;
   /** 策略特定参数 */
-  params?: Record<string, number>;
+  params?: Record<string, number | string | boolean>;
 }
 
 export interface SignalStrategy {
