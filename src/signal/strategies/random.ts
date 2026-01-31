@@ -56,13 +56,13 @@ export class RandomStrategy extends BaseStrategy<RandomParams> {
     const { tradeProbability, avgHoldingPeriod } = this.params;
 
     // 如果有持仓，考虑平仓
-    if (this.getPosition() !== 'hold') {
+    if (this.getPosition() !== 0) {
       this.barsHeld++;
       // 平仓概率随持仓时间增加（指数分布）
       const closeProbability = 1 - Math.exp(-this.barsHeld / avgHoldingPeriod);
       if (this.random.next() < closeProbability) {
         this.barsHeld = 0;
-        return this.closePosition();
+        return this.close();
       }
       return this.hold();
     }
@@ -70,9 +70,11 @@ export class RandomStrategy extends BaseStrategy<RandomParams> {
     // 考虑开仓
     if (this.random.next() < tradeProbability) {
       // 50% 做多, 50% 做空
-      const direction = this.random.next() < 0.5 ? 'long' : 'short';
-      const strength = this.random.next();
-      return this.openPosition(direction, strength);
+      if (this.random.next() < 0.5) {
+        return this.long();
+      } else {
+        return this.short();
+      }
     }
 
     return this.hold();

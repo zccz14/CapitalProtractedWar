@@ -73,13 +73,15 @@ export interface MarketConfig {
 // 信号策略类型
 // ============================================
 
-export type SignalDirection = 'long' | 'short' | 'close' | 'hold';
-
-export interface Signal {
-  direction: SignalDirection;
-  /** 信号强度 0-1 (可选, 用于加权) */
-  strength?: number;
-}
+/**
+ * 交易信号 - 目标仓位
+ * 
+ * 使用带符号的数值表示:
+ * -  1 = 满仓做多
+ * -  0 = 空仓 (平仓)
+ * - -1 = 满仓做空
+ */
+export type Signal = number;
 
 export type SignalStrategyType = 
   | 'trend_following'      // 趋势跟踪 (动量策略)
@@ -117,8 +119,8 @@ export interface PositionState {
   peakMultiplier: number;
   /** 基础仓位 (固定为1) */
   baseSize: number;
-  /** 当前持仓方向 */
-  currentDirection: SignalDirection;
+  /** 当前持仓方向: 1=多, 0=空仓, -1=空 */
+  currentPosition: number;
   /** 入场价格 */
   entryPrice: number | null;
 }
@@ -140,7 +142,8 @@ export interface PositionManager {
 
 export interface TradeRecord {
   index: number;          // K线索引
-  direction: SignalDirection;
+  /** 持仓方向: 1=多, -1=空 */
+  position: number;
   entryPrice: number;
   exitPrice: number;
   positionSize: number;

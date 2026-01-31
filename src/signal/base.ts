@@ -10,7 +10,6 @@
 import type { 
   Candle, 
   Signal, 
-  SignalDirection,
   SignalStrategy, 
   SignalStrategyConfig,
   SignalStrategyType 
@@ -58,7 +57,7 @@ export interface BaseStrategyParams {
  * 信号策略抽象基类
  * 
  * 提供通用功能：
- * - 持仓状态管理
+ * - 持仓状态管理 (position: -1, 0, 1)
  * - 信号生成框架
  * - 参数验证
  */
@@ -68,7 +67,8 @@ export abstract class BaseStrategy<P extends BaseStrategyParams = BaseStrategyPa
   abstract readonly type: SignalStrategyType;
   
   protected params: P;
-  protected currentPosition: SignalDirection = 'hold';
+  /** 当前持仓: 1=多, 0=空仓, -1=空 */
+  protected currentPosition: number = 0;
   
   constructor(params: P) {
     this.params = params;
@@ -83,7 +83,7 @@ export abstract class BaseStrategy<P extends BaseStrategyParams = BaseStrategyPa
    * 重置策略状态
    */
   reset(): void {
-    this.currentPosition = 'hold';
+    this.currentPosition = 0;
     this.onReset();
   }
   
@@ -95,55 +95,48 @@ export abstract class BaseStrategy<P extends BaseStrategyParams = BaseStrategyPa
   }
   
   /**
-   * 获取当前持仓方向
+   * 获取当前持仓
    */
-  protected getPosition(): SignalDirection {
+  protected getPosition(): number {
     return this.currentPosition;
   }
   
   /**
-   * 设置持仓方向
+   * 设置持仓
    */
-  protected setPosition(direction: SignalDirection): void {
-    this.currentPosition = direction;
+  protected setPosition(position: number): void {
+    this.currentPosition = position;
   }
   
   /**
-   * 辅助方法：生成开仓信号（处理反向持仓的平仓）
+   * 辅助方法：生成做多信号
    */
-  protected openPosition(
-    direction: 'long' | 'short', 
-    strength?: number
-  ): Signal {
-    const oppositeDirection = direction === 'long' ? 'short' : 'long';
-    
-    // 如果有反向持仓，先平仓
-    if (this.currentPosition === oppositeDirection) {
-      this.currentPosition = 'close';
-      return { direction: 'close' };
-    }
-    
-    // 开仓
-    this.currentPosition = direction;
-    return { direction, strength };
+  protected long(): Signal {
+    this.currentPosition = 1;
+    return 1;
+  }
+  
+  /**
+   * 辅助方法：生成做空信号
+   */
+  protected short(): Signal {
+    this.currentPosition = -1;
+    return -1;
   }
   
   /**
    * 辅助方法：生成平仓信号
    */
-  protected closePosition(): Signal {
-    if (this.currentPosition !== 'hold') {
-      this.currentPosition = 'close';
-      return { direction: 'close' };
-    }
-    return { direction: 'hold' };
+  protected close(): Signal {
+    this.currentPosition = 0;
+    return 0;
   }
   
   /**
-   * 辅助方法：保持当前状态
+   * 辅助方法：保持当前仓位（不发出新信号）
    */
   protected hold(): Signal {
-    return { direction: 'hold' };
+    return this.currentPosition;
   }
   
   /**

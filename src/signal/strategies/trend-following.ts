@@ -59,14 +59,12 @@ export class TrendFollowingStrategy extends BaseStrategy<TrendFollowingParams> {
 
     // 金叉: 短期均线上穿长期均线 -> 做多
     if (prevShortSMA <= prevLongSMA && shortSMA > longSMA) {
-      const strength = (shortSMA - longSMA) / longSMA;
-      return this.openPosition('long', strength);
+      return this.long();
     }
 
     // 死叉: 短期均线下穿长期均线 -> 做空
     if (prevShortSMA >= prevLongSMA && shortSMA < longSMA) {
-      const strength = (longSMA - shortSMA) / longSMA;
-      return this.openPosition('short', strength);
+      return this.short();
     }
 
     return this.hold();

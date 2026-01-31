@@ -185,8 +185,8 @@ export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityP
     // 2. 检查波动率过滤
     if (this.shouldFilter(volState)) {
       // 如果有持仓，在极端波动时考虑平仓
-      if (this.getPosition() !== 'hold' && volState.regime === 'extreme') {
-        return this.closePosition();
+      if (this.getPosition() !== 0 && volState.regime === 'extreme') {
+        return this.close();
       }
       return this.hold();
     }
@@ -194,7 +194,7 @@ export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityP
     // 3. 波动率突破信号处理
     if (adaptiveMode === 'volatility_breakout' || adaptiveMode === 'full') {
       const breakoutSignal = this.handleVolatilityBreakout(candles, currentIndex, volState);
-      if (breakoutSignal.direction !== 'hold') {
+      if (breakoutSignal !== this.getPosition()) {
         return breakoutSignal;
       }
     }
@@ -206,16 +206,6 @@ export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityP
     const baseSignal = this.params.baseStrategy === 'trend'
       ? this.generateTrendSignal(candles, currentIndex, adaptedParams)
       : this.generateMeanReversionSignal(candles, currentIndex, adaptedParams);
-
-    // 6. 根据波动率状态调整信号强度
-    if (baseSignal.direction !== 'hold' && baseSignal.strength !== undefined) {
-      // 高波动时降低信号强度
-      if (volState.regime === 'high') {
-        baseSignal.strength *= 0.7;
-      } else if (volState.regime === 'extreme') {
-        baseSignal.strength *= 0.5;
-      }
-    }
 
     return baseSignal;
   }
@@ -302,9 +292,11 @@ export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityP
         // 根据价格变化方向开仓
         const threshold = 0.01; // 1% 价格变化确认
         if (Math.abs(priceChange) > threshold) {
-          const direction = priceChange > 0 ? 'long' : 'short';
-          const strength = Math.min(1, Math.abs(priceChange) * 10);
-          return this.openPosition(direction, strength);
+          if (priceChange > 0) {
+            return this.long();
+          } else {
+            return this.short();
+          }
         }
       }
     }
@@ -372,14 +364,12 @@ export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityP
 
     // 金叉
     if (prevShortSMA <= prevLongSMA && shortSMA > longSMA) {
-      const strength = (shortSMA - longSMA) / longSMA;
-      return this.openPosition('long', strength);
+      return this.long();
     }
 
     // 死叉
     if (prevShortSMA >= prevLongSMA && shortSMA < longSMA) {
-      const strength = (longSMA - shortSMA) / longSMA;
-      return this.openPosition('short', strength);
+      return this.short();
     }
 
     return this.hold();
@@ -403,19 +393,17 @@ export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityP
 
     // 价格高于均线太多 -> 做空
     if (deviation > deviationThreshold) {
-      const strength = Math.min(1, deviation / deviationThreshold);
-      return this.openPosition('short', strength);
+      return this.short();
     }
 
     // 价格低于均线太多 -> 做多
     if (deviation < -deviationThreshold) {
-      const strength = Math.min(1, -deviation / deviationThreshold);
-      return this.openPosition('long', strength);
+      return this.long();
     }
 
     // 回到均线附近 -> 平仓
-    if (this.getPosition() !== 'hold' && Math.abs(deviation) < deviationThreshold * 0.5) {
-      return this.closePosition();
+    if (this.getPosition() !== 0 && Math.abs(deviation) < deviationThreshold * 0.5) {
+      return this.close();
     }
 
     return this.hold();

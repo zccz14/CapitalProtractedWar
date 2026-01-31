@@ -14,8 +14,7 @@
 
 import type { 
   PositionState, 
-  PositionManager, 
-  SignalDirection 
+  PositionManager,
 } from '../types.js';
 
 // ============================================
@@ -62,7 +61,7 @@ export class AntiMartingalePositionManager implements PositionManager {
       consecutiveWins: 0,
       peakMultiplier: 1,
       baseSize: this.config.baseSize,
-      currentDirection: 'hold',
+      currentPosition: 0,
       entryPrice: null,
     };
   }
@@ -143,18 +142,21 @@ export class AntiMartingalePositionManager implements PositionManager {
   }
 
   /**
-   * 设置当前持仓方向和入场价格
+   * 设置当前持仓和入场价格
+   * @param position - 持仓方向: 1=多, 0=空仓, -1=空
+   * @param entryPrice - 入场价格
    */
-  setPosition(direction: SignalDirection, entryPrice: number | null): void {
-    this.state.currentDirection = direction;
+  setPosition(position: number, entryPrice: number | null): void {
+    this.state.currentPosition = position;
     this.state.entryPrice = entryPrice;
   }
 
   /**
-   * 获取当前持仓方向
+   * 获取当前持仓
+   * @returns 1=多, 0=空仓, -1=空
    */
-  getCurrentDirection(): SignalDirection {
-    return this.state.currentDirection;
+  getPosition(): number {
+    return this.state.currentPosition;
   }
 
   /**
@@ -209,7 +211,7 @@ export class FixedPositionManager implements PositionManager {
       consecutiveWins: 0,
       peakMultiplier: 1,
       baseSize: this.fixedSize,
-      currentDirection: 'hold',
+      currentPosition: 0,
       entryPrice: null,
     };
   }
@@ -239,13 +241,22 @@ export class FixedPositionManager implements PositionManager {
     }
   }
 
-  setPosition(direction: SignalDirection, entryPrice: number | null): void {
-    this.state.currentDirection = direction;
+  /**
+   * 设置当前持仓和入场价格
+   * @param position - 持仓方向: 1=多, 0=空仓, -1=空
+   * @param entryPrice - 入场价格
+   */
+  setPosition(position: number, entryPrice: number | null): void {
+    this.state.currentPosition = position;
     this.state.entryPrice = entryPrice;
   }
 
-  getCurrentDirection(): SignalDirection {
-    return this.state.currentDirection;
+  /**
+   * 获取当前持仓
+   * @returns 1=多, 0=空仓, -1=空
+   */
+  getPosition(): number {
+    return this.state.currentPosition;
   }
 
   getEntryPrice(): number | null {

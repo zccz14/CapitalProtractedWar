@@ -70,30 +70,28 @@ export class BreakoutStrategy extends BaseStrategy<BreakoutParams> {
     if (currentPrice > highestHigh * (1 + breakoutThreshold)) {
       this.breakoutHigh = highestHigh;
       this.breakoutLow = lowestLow;
-      const strength = Math.min(1, (currentPrice - highestHigh) / range);
-      return this.openPosition('long', strength);
+      return this.long();
     }
 
     // 向下突破 -> 做空
     if (currentPrice < lowestLow * (1 - breakoutThreshold)) {
       this.breakoutHigh = highestHigh;
       this.breakoutLow = lowestLow;
-      const strength = Math.min(1, (lowestLow - currentPrice) / range);
-      return this.openPosition('short', strength);
+      return this.short();
     }
 
     // 止损检查
     const position = this.getPosition();
-    if (position === 'long') {
+    if (position === 1) {
       const stopPrice = this.breakoutHigh - range * stopLossRatio;
       if (currentPrice < stopPrice) {
-        return this.closePosition();
+        return this.close();
       }
     }
-    if (position === 'short') {
+    if (position === -1) {
       const stopPrice = this.breakoutLow + range * stopLossRatio;
       if (currentPrice > stopPrice) {
-        return this.closePosition();
+        return this.close();
       }
     }
 

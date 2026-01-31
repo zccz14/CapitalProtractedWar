@@ -61,20 +61,18 @@ export class MeanReversionStrategy extends BaseStrategy<MeanReversionParams> {
 
     // 价格高于均线太多 -> 做空 (预期回归)
     if (deviation > deviationThreshold) {
-      const strength = Math.min(1, deviation / deviationThreshold);
-      return this.openPosition('short', strength);
+      return this.short();
     }
 
     // 价格低于均线太多 -> 做多 (预期回归)
     if (deviation < -deviationThreshold) {
-      const strength = Math.min(1, -deviation / deviationThreshold);
-      return this.openPosition('long', strength);
+      return this.long();
     }
 
     // 价格回到均线附近 -> 平仓
     const closeThreshold = deviationThreshold * closeThresholdRatio;
-    if (this.getPosition() !== 'hold' && Math.abs(deviation) < closeThreshold) {
-      return this.closePosition();
+    if (this.getPosition() !== 0 && Math.abs(deviation) < closeThreshold) {
+      return this.close();
     }
 
     return this.hold();

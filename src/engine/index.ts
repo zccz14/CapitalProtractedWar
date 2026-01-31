@@ -80,66 +80,20 @@ export class BacktestEngine {
     // 遍历K线
     for (let i = 0; i < candles.length; i++) {
       const signal = strategy.generate(candles, i);
-      const currentDirection = positionManager.getCurrentDirection();
+      const currentPosition = positionManager.getPosition();
       const entryPrice = positionManager.getEntryPrice();
+      const currentPrice = candles[i].close;
 
-      // 处理信号
-      if (signal.direction === 'close' && currentDirection !== 'hold' && entryPrice !== null) {
-        // 平仓
-        const exitPrice = candles[i].close;
-        const pnlPercent = this.calculatePnL(currentDirection, entryPrice, exitPrice);
-        const positionSize = positionManager.getPositionSize();
-        const turnover = (entryPrice + exitPrice) * positionSize;
-        const tradingCost = turnover * effectiveTradingCostRate;
-        
-        // 处理交易结果
-        positionManager.processTradeResult(pnlPercent);
-        
-        // 扣除交易成本 (从资产倍率中扣除)
-        if (tradingCost > 0) {
-          positionManager.deductCost(tradingCost);
-        }
-        
-        // 记录交易
-        trades.push({
-          index: i,
-          direction: currentDirection,
-          entryPrice,
-          exitPrice,
-          positionSize,
-          pnlPercent,
-          assetMultiplierAfter: positionManager.getState().assetMultiplier,
-          turnover,
-          tradingCost,
-        });
-
-        // 更新统计
-        if (pnlPercent > 0) {
-          winCount++;
-          currentConsecutiveLosses = 0;
-        } else if (pnlPercent < 0) {
-          currentConsecutiveLosses++;
-          maxConsecutiveLosses = Math.max(maxConsecutiveLosses, currentConsecutiveLosses);
-        }
-        maxConsecutiveWins = Math.max(maxConsecutiveWins, positionManager.getState().consecutiveWins);
-
-        // 清除持仓
-        positionManager.setPosition('hold', null);
-      } 
-      else if ((signal.direction === 'long' || signal.direction === 'short') && currentDirection === 'hold') {
-        // 开仓
-        positionManager.setPosition(signal.direction, candles[i].close);
-      }
-      else if ((signal.direction === 'long' && currentDirection === 'short') || 
-               (signal.direction === 'short' && currentDirection === 'long')) {
-        // 反向开仓: 先平仓再开仓
-        if (entryPrice !== null) {
-          const exitPrice = candles[i].close;
-          const pnlPercent = this.calculatePnL(currentDirection, entryPrice, exitPrice);
+      // 简化的交易逻辑: 只要目标仓位与当前仓位不同，就需要处理
+      if (signal !== currentPosition) {
+        // 1. 如果有现有仓位，先平仓
+        if (currentPosition !== 0 && entryPrice !== null) {
+          const pnlPercent = this.calculatePnL(currentPosition, entryPrice, currentPrice);
           const positionSize = positionManager.getPositionSize();
-          const turnover = (entryPrice + exitPrice) * positionSize;
+          const turnover = (entryPrice + currentPrice) * positionSize;
           const tradingCost = turnover * effectiveTradingCostRate;
           
+          // 处理交易结果
           positionManager.processTradeResult(pnlPercent);
           
           // 扣除交易成本
@@ -147,11 +101,12 @@ export class BacktestEngine {
             positionManager.deductCost(tradingCost);
           }
           
+          // 记录交易
           trades.push({
             index: i,
-            direction: currentDirection,
+            position: currentPosition,
             entryPrice,
-            exitPrice,
+            exitPrice: currentPrice,
             positionSize,
             pnlPercent,
             assetMultiplierAfter: positionManager.getState().assetMultiplier,
@@ -159,6 +114,7 @@ export class BacktestEngine {
             tradingCost,
           });
 
+          // 更新统计
           if (pnlPercent > 0) {
             winCount++;
             currentConsecutiveLosses = 0;
@@ -168,9 +124,15 @@ export class BacktestEngine {
           }
           maxConsecutiveWins = Math.max(maxConsecutiveWins, positionManager.getState().consecutiveWins);
         }
-        
-        // 开新仓
-        positionManager.setPosition(signal.direction, candles[i].close);
+
+        // 2. 设置新仓位
+        if (signal !== 0) {
+          // 开新仓
+          positionManager.setPosition(signal, currentPrice);
+        } else {
+          // 平仓后保持空仓
+          positionManager.setPosition(0, null);
+        }
       }
 
       // 记录当前资产倍率
@@ -186,11 +148,11 @@ export class BacktestEngine {
     }
 
     // 如果还有持仓,在最后平仓
-    const finalDirection = positionManager.getCurrentDirection();
+    const finalPosition = positionManager.getPosition();
     const finalEntryPrice = positionManager.getEntryPrice();
-    if (finalDirection !== 'hold' && finalEntryPrice !== null) {
+    if (finalPosition !== 0 && finalEntryPrice !== null) {
       const exitPrice = candles[candles.length - 1].close;
-      const pnlPercent = this.calculatePnL(finalDirection, finalEntryPrice, exitPrice);
+      const pnlPercent = this.calculatePnL(finalPosition, finalEntryPrice, exitPrice);
       const positionSize = positionManager.getPositionSize();
       const turnover = (finalEntryPrice + exitPrice) * positionSize;
       const tradingCost = turnover * effectiveTradingCostRate;
@@ -204,7 +166,7 @@ export class BacktestEngine {
       
       trades.push({
         index: candles.length - 1,
-        direction: finalDirection,
+        position: finalPosition,
         entryPrice: finalEntryPrice,
         exitPrice,
         positionSize,
@@ -246,14 +208,15 @@ export class BacktestEngine {
 
   /**
    * 计算盈亏百分比
+   * 
+   * @param position - 持仓方向: 1=多, -1=空
+   * @param entryPrice - 入场价格
+   * @param exitPrice - 出场价格
+   * @returns 盈亏百分比
    */
-  private calculatePnL(direction: 'long' | 'short' | 'close' | 'hold', entryPrice: number, exitPrice: number): number {
-    if (direction === 'long') {
-      return (exitPrice - entryPrice) / entryPrice;
-    } else if (direction === 'short') {
-      return (entryPrice - exitPrice) / entryPrice;
-    }
-    return 0;
+  private calculatePnL(position: number, entryPrice: number, exitPrice: number): number {
+    // PnL = position * (exitPrice - entryPrice) / entryPrice
+    return position * (exitPrice - entryPrice) / entryPrice;
   }
 }
 
