@@ -31,8 +31,10 @@ export interface BacktestEngineConfig {
   targetMultipliers: number[];
   /** 仓位管理配置 */
   positionConfig?: Partial<AntiMartingaleConfig>;
-  /** 交易成本率 (成交额的固定比例, 如 0.0003 = 0.03%) */
+  /** 交易成本率 (基础成本率, 如 0.0005 = 0.05%) */
   tradingCostRate?: number;
+  /** 杠杆倍数 (用于放大交易成本, 默认1) */
+  leverage?: number;
 }
 
 // ============================================
@@ -54,8 +56,11 @@ export class BacktestEngine {
     const positionManager = new AntiMartingalePositionManager(this.config.positionConfig);
     strategy.reset();
     
-    // 获取交易成本率
-    const tradingCostRate = this.config.tradingCostRate ?? 0;
+    // 获取交易成本率和杠杆倍数
+    const baseTradingCostRate = this.config.tradingCostRate ?? 0;
+    const leverage = this.config.leverage ?? 1;
+    // 实际交易成本率 = 基础成本率 × 杠杆倍数
+    const effectiveTradingCostRate = baseTradingCostRate * leverage;
 
     // 初始化跟踪变量
     const multiplierHistory: number[] = [1]; // 初始倍率为1
@@ -85,7 +90,7 @@ export class BacktestEngine {
         const pnlPercent = this.calculatePnL(currentDirection, entryPrice, exitPrice);
         const positionSize = positionManager.getPositionSize();
         const turnover = (entryPrice + exitPrice) * positionSize;
-        const tradingCost = turnover * tradingCostRate;
+        const tradingCost = turnover * effectiveTradingCostRate;
         
         // 处理交易结果
         positionManager.processTradeResult(pnlPercent);
@@ -133,7 +138,7 @@ export class BacktestEngine {
           const pnlPercent = this.calculatePnL(currentDirection, entryPrice, exitPrice);
           const positionSize = positionManager.getPositionSize();
           const turnover = (entryPrice + exitPrice) * positionSize;
-          const tradingCost = turnover * tradingCostRate;
+          const tradingCost = turnover * effectiveTradingCostRate;
           
           positionManager.processTradeResult(pnlPercent);
           
@@ -188,7 +193,7 @@ export class BacktestEngine {
       const pnlPercent = this.calculatePnL(finalDirection, finalEntryPrice, exitPrice);
       const positionSize = positionManager.getPositionSize();
       const turnover = (finalEntryPrice + exitPrice) * positionSize;
-      const tradingCost = turnover * tradingCostRate;
+      const tradingCost = turnover * effectiveTradingCostRate;
       
       positionManager.processTradeResult(pnlPercent);
       
@@ -277,6 +282,7 @@ export class ExperimentRunner {
     const engine = new BacktestEngine({
       targetMultipliers: config.targetMultipliers,
       tradingCostRate: config.tradingCostRate,
+      leverage: config.market.leverage,
     });
 
     // 运行蒙特卡洛模拟

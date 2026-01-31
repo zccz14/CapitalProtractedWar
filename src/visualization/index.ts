@@ -639,10 +639,12 @@ export function generateHTMLReport(result: ExperimentResult): string {
         <li><strong>实验名称:</strong> ${config.name}</li>
         <li><strong>市场类型:</strong> ${config.market.type.toUpperCase()}</li>
         <li><strong>等效波动率:</strong> ${(config.market.volatility * 100).toFixed(1)}%</li>
+        <li><strong>杠杆倍数:</strong> ${config.market.leverage ?? 1}x</li>
         <li><strong>信号策略:</strong> ${config.signal.type}</li>
         <li><strong>K线数量:</strong> ${config.market.candleCount}</li>
         <li><strong>蒙特卡洛次数:</strong> ${config.monteCarloRuns}</li>
-        <li><strong>交易成本率:</strong> ${((config.tradingCostRate ?? 0) * 100).toFixed(4)}%</li>
+        <li><strong>基础交易成本率:</strong> ${((config.tradingCostRate ?? 0) * 100).toFixed(4)}%</li>
+        <li><strong>实际交易成本率:</strong> ${((config.tradingCostRate ?? 0) * (config.market.leverage ?? 1) * 100).toFixed(4)}%</li>
         <li><strong>运行时间:</strong> ${result.elapsedMs}ms</li>
       </ul>
     </div>
@@ -751,6 +753,7 @@ export function generateComparisonHTMLReport(results: ExperimentResult[]): strin
     name: r.config.name,
     market: r.config.market.type,
     volatility: r.config.market.volatility,
+    leverage: r.config.market.leverage ?? 1,
     signal: r.config.signal.type,
     meanM: r.mDistribution.mean,
     medianM: r.mDistribution.median,
@@ -765,8 +768,9 @@ export function generateComparisonHTMLReport(results: ExperimentResult[]): strin
     avgTurnover: r.avgTotalTurnover,
   }));
   
-  // 按波动率分组
+  // 按波动率和杠杆分组
   const volatilities = [...new Set(rows.map(r => r.volatility))].sort((a, b) => a - b);
+  const leverages = [...new Set(rows.map(r => r.leverage))].sort((a, b) => a - b);
   const signals = [...new Set(rows.map(r => r.signal))];
   
   // 生成主对比表格
@@ -776,6 +780,7 @@ export function generateComparisonHTMLReport(results: ExperimentResult[]): strin
     <tr>
       <td><a href="${reportFileName}">${r.name}</a></td>
       <td>${(r.volatility * 100).toFixed(0)}%</td>
+      <td>${r.leverage}x</td>
       <td>${r.signal}</td>
       <td>${r.meanM >= 1000 ? r.meanM.toExponential(2) : r.meanM.toFixed(2)}x</td>
       <td>${r.medianM.toFixed(2)}x</td>
@@ -926,6 +931,7 @@ export function generateComparisonHTMLReport(results: ExperimentResult[]): strin
         <tr>
           <th>实验名称</th>
           <th>波动率</th>
+          <th>杠杆</th>
           <th>信号策略</th>
           <th>E[M]</th>
           <th>Median[M]</th>

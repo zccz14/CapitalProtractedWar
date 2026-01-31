@@ -133,6 +133,7 @@ export function printReport(result: ExperimentResult): void {
 export interface ComparisonRow {
   name: string;
   volatility: number;
+  leverage: number;
   signalType: string;
   marketType: string;
   meanM: number;
@@ -158,6 +159,7 @@ export function compareExperiments(results: ExperimentResult[]): ComparisonRow[]
     return {
       name: config.name,
       volatility: config.market.volatility,
+      leverage: config.market.leverage ?? 1,
       signalType: config.signal.type,
       marketType: config.market.type,
       meanM: mDistribution.mean,
@@ -181,14 +183,15 @@ export function compareExperiments(results: ExperimentResult[]): ComparisonRow[]
 export function printComparisonTable(results: ExperimentResult[]): void {
   const rows = compareExperiments(results);
   
-  console.log('\n' + '='.repeat(140));
+  console.log('\n' + '='.repeat(150));
   console.log('实验对比表');
-  console.log('='.repeat(140));
+  console.log('='.repeat(150));
   
   // 表头
   console.log(
     '实验名称'.padEnd(20) +
     'σ'.padStart(8) +
+    '杠杆'.padStart(6) +
     '市场'.padStart(12) +
     '信号'.padStart(16) +
     'E[M]'.padStart(10) +
@@ -200,13 +203,14 @@ export function printComparisonTable(results: ExperimentResult[]): void {
     'T(10x)'.padStart(8) +
     '成交额'.padStart(12)
   );
-  console.log('-'.repeat(140));
+  console.log('-'.repeat(150));
   
   // 数据行
   for (const row of rows) {
     console.log(
       row.name.slice(0, 18).padEnd(20) +
       (row.volatility * 100).toFixed(1).padStart(7) + '%' +
+      (row.leverage + 'x').padStart(6) +
       row.marketType.padStart(12) +
       row.signalType.padStart(16) +
       row.meanM.toFixed(2).padStart(10) +
@@ -256,7 +260,7 @@ export function exportToCSV(results: ExperimentResult[]): string {
   const rows = compareExperiments(results);
   
   const header = [
-    'name', 'volatility', 'marketType', 'signalType',
+    'name', 'volatility', 'leverage', 'marketType', 'signalType',
     'meanM', 'maxM', 'p95M',
     'probReach2x', 'probReach10x', 'probReach100x',
     'avgCandlesTo2x', 'avgCandlesTo10x', 
@@ -266,6 +270,7 @@ export function exportToCSV(results: ExperimentResult[]): string {
   const dataRows = rows.map(row => [
     `"${row.name}"`,
     row.volatility,
+    row.leverage,
     row.marketType,
     row.signalType,
     row.meanM.toFixed(4),

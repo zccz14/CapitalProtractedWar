@@ -5,11 +5,16 @@
  * 
  * 配置:
  * - 市场: GBM (几何布朗运动)
- * - 波动率: [10%, 20%, 50%, 100%]
+ * - 波动率场景: 模拟不同杠杆下的等效波动率
  * - 信号: [趋势跟踪, 均值回归, 突破, 随机]
  * - K线数: 2000
  * - 蒙特卡洛: 1000次
- * - 交易成本: 0.05% (固定成本率)
+ * - 交易成本: 0.05% 基础成本率 (按杠杆倍数放大)
+ * 
+ * 波动率场景设计:
+ * - 假设基础资产 (如BTC) 年化波动率为 50%
+ * - 不同杠杆产生不同的等效波动率
+ * - 交易成本 = 基础成本率 × 杠杆倍数
  */
 
 import { ExperimentRunner } from '../engine/index.js';
@@ -51,33 +56,59 @@ const SIGNAL_STRATEGIES: Array<{
   },
 ];
 
-// 测试不同波动率
-const VOLATILITIES = [0.10, 0.20, 0.50, 1.00];
+/**
+ * 波动率场景配置
+ * 
+ * 基于 BTC 基础波动率 50% 的假设:
+ * - 1x 杠杆 → 50% 波动率
+ * - 2x 杠杆 → 100% 波动率
+ * - 等等...
+ * 
+ * 交易成本会按杠杆倍数放大
+ */
+const VOLATILITY_SCENARIOS: Array<{
+  volatility: number;
+  leverage: number;
+  description: string;
+}> = [
+  { volatility: 0.10, leverage: 1,  description: '低波动资产 1x (股票/外汇)' },
+  { volatility: 0.20, leverage: 1,  description: '中波动资产 1x (小盘股)' },
+  { volatility: 0.50, leverage: 1,  description: 'BTC 现货 1x' },
+  { volatility: 0.50, leverage: 2,  description: 'BTC 2x 杠杆' },
+  { volatility: 0.50, leverage: 5,  description: 'BTC 5x 杠杆' },
+  { volatility: 0.50, leverage: 10, description: 'BTC 10x 杠杆' },
+];
 
-// 交易成本率 (0.05%)
-const TRADING_COST_RATE = 0.0005;
+// 基础交易成本率 (0.05%)
+const BASE_TRADING_COST_RATE = 0.0005;
 
 async function runExperiment2() {
-  console.log('='.repeat(60));
-  console.log('实验2: 信号策略 × 波动率 对比实验');
-  console.log(`交易成本率: ${(TRADING_COST_RATE * 100).toFixed(4)}%`);
-  console.log('='.repeat(60));
+  console.log('='.repeat(70));
+  console.log('实验2: 信号策略 × 波动率/杠杆 对比实验');
+  console.log(`基础交易成本率: ${(BASE_TRADING_COST_RATE * 100).toFixed(4)}%`);
+  console.log('='.repeat(70));
   
   const runner = new ExperimentRunner();
   const results: ExperimentResult[] = [];
   
-  for (const volatility of VOLATILITIES) {
-    console.log(`\n${'='.repeat(60)}`);
-    console.log(`波动率: ${(volatility * 100).toFixed(0)}%`);
-    console.log('='.repeat(60));
+  for (const scenario of VOLATILITY_SCENARIOS) {
+    const effectiveVol = scenario.volatility * scenario.leverage;
+    const effectiveCost = BASE_TRADING_COST_RATE * scenario.leverage;
+    
+    console.log(`\n${'='.repeat(70)}`);
+    console.log(`场景: ${scenario.description}`);
+    console.log(`  基础波动率: ${(scenario.volatility * 100).toFixed(0)}% | 杠杆: ${scenario.leverage}x | 等效波动率: ${(effectiveVol * 100).toFixed(0)}%`);
+    console.log(`  实际交易成本: ${(effectiveCost * 100).toFixed(4)}%`);
+    console.log('='.repeat(70));
     
     for (const strategy of SIGNAL_STRATEGIES) {
       const config: ExperimentConfig = {
-        name: `exp2_${strategy.shortName}_vol${(volatility * 100).toFixed(0)}`,
-        description: `GBM市场, 波动率${(volatility * 100).toFixed(0)}%, ${strategy.name}`,
+        name: `exp2_${strategy.shortName}_vol${(scenario.volatility * 100).toFixed(0)}_lev${scenario.leverage}`,
+        description: `${scenario.description}, ${strategy.name}`,
         market: {
           type: 'gbm',
-          volatility,
+          volatility: effectiveVol,  // 使用等效波动率
+          leverage: scenario.leverage,
           candleCount: 2000,
           seed: 42,
         },
@@ -87,7 +118,7 @@ async function runExperiment2() {
         },
         monteCarloRuns: 1000,
         targetMultipliers: DEFAULT_TARGET_MULTIPLIERS,
-        tradingCostRate: TRADING_COST_RATE,
+        tradingCostRate: BASE_TRADING_COST_RATE,  // 基础成本率,引擎会按杠杆放大
       };
       
       console.log(`\n运行: ${config.name} (${strategy.name})...`);

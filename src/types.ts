@@ -30,6 +30,19 @@ export interface MarketConfig {
   type: MarketType;
   /** 年化波动率 σ (会自动转换为日波动率) */
   volatility: number;
+  /** 
+   * 杠杆倍数 (默认1)
+   * 
+   * 用于计算等效场景：
+   * - 等效波动率 = baseVolatility × leverage (已体现在 volatility 字段)
+   * - 交易成本放大 = baseCostRate × leverage
+   * 
+   * 例如：BTC 现货波动率 50%，使用 10x 杠杆
+   * - volatility = 0.50 (或已经是等效的 5.00)
+   * - leverage = 10
+   * - 交易成本按 10x 放大
+   */
+  leverage?: number;
   /** 年化漂移率 μ (默认0) */
   drift?: number;
   /** 初始价格 (默认100) */
