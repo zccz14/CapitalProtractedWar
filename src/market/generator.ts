@@ -218,3 +218,45 @@ export function calculateRealizedVolatility(candles: Candle[]): number {
   
   return Math.sqrt(variance);
 }
+
+/**
+ * 合并K线周期
+ * 将 N 根K线合并为1根，放大等效波动率
+ * 
+ * @param candles 原始K线数据
+ * @param period 合并周期 (N根合并为1根)
+ * @returns 合并后的K线数据
+ * 
+ * 理论依据：
+ * - 合并后波动率 ≈ 原波动率 × √period
+ * - 合并后K线数量 = floor(原数量 / period)
+ */
+export function aggregateCandles(candles: Candle[], period: number): Candle[] {
+  if (period <= 1) return candles;
+  
+  const aggregated: Candle[] = [];
+  
+  for (let i = 0; i + period <= candles.length; i += period) {
+    const batch = candles.slice(i, i + period);
+    
+    // 合并规则：
+    // - open: 第一根的open
+    // - close: 最后一根的close
+    // - high: 所有K线的最高价
+    // - low: 所有K线的最低价
+    // - time: 第一根的时间
+    // - volume: 所有K线volume之和
+    const merged: Candle = {
+      time: batch[0].time,
+      open: batch[0].open,
+      close: batch[batch.length - 1].close,
+      high: Math.max(...batch.map(c => c.high)),
+      low: Math.min(...batch.map(c => c.low)),
+      volume: batch.reduce((sum, c) => sum + (c.volume ?? 0), 0) || undefined,
+    };
+    
+    aggregated.push(merged);
+  }
+  
+  return aggregated;
+}
