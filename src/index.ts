@@ -1,7 +1,7 @@
 /**
  * Capital Protracted War - 资本持久战实验框架
  * 
- * 核心模块导出
+ * 核心模块导出（新范式 v2）
  */
 
 // 类型定义
@@ -19,22 +19,31 @@ export {
   RandomStrategy,
 } from './signal/index.js';
 
-// 仓位管理
+// 投注策略（新增）
+export { MultiAccountTracker } from './betting/index.js';
+
+// 仓位管理（保留旧API用于兼容）
 export {
   AntiMartingalePositionManager,
   FixedPositionManager,
   createPositionManager,
 } from './position/index.js';
 
-// 回测引擎
-export { BacktestEngine, ExperimentRunner } from './engine/index.js';
+// 回测引擎（新范式）
+export { 
+  NewParadigmBacktestEngine,
+  NewParadigmExperimentRunner,
+  // 别名，向后兼容
+  BacktestEngine, 
+  ExperimentRunner 
+} from './engine/index.js';
 
 // 分析工具
 export {
   formatReport,
   printReport,
-  compareExperiments,
   printComparisonTable,
+  extractComparisonData,
   exportToJSON,
   exportToCSV,
   calculateHistogram,
@@ -44,7 +53,6 @@ export {
 // 可视化
 export {
   generateHTMLReport,
-  generateComparisonHTMLReport,
   saveReport,
   saveComparisonReport,
 } from './visualization/index.js';

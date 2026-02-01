@@ -1,29 +1,27 @@
 #!/usr/bin/env node
 /**
- * CLI - 命令行接口
+ * CLI - 命令行接口（新范式）
  * 
  * 用法:
- *   npx tsx src/cli.ts run --volatility 0.1 --signal random --market gbm --runs 1000
- *   npx tsx src/cli.ts exp1   # 运行实验1
- *   npx tsx src/cli.ts exp2   # 运行实验2
- *   npx tsx src/cli.ts exp3   # 运行实验3
- *   npx tsx src/cli.ts exp4   # 运行实验4 (全矩阵)
+ *   npx tsx src/cli.ts run --volatility 0.1 --signal random --market gbm --runs 100
+ *   npx tsx src/cli.ts exp-new   # 运行新范式实验
+ *   npx tsx src/cli.ts scenarios # 查看波动率场景
  */
 
 import { Command } from 'commander';
-import { ExperimentRunner } from './engine/index.js';
+import { NewParadigmExperimentRunner } from './engine/index.js';
 import { printReport, exportToJSON } from './analysis/index.js';
 import { saveReport } from './visualization/index.js';
 import type { ExperimentConfig, MarketType, SignalStrategyType } from './types.js';
-import { DEFAULT_TARGET_MULTIPLIERS, VOLATILITY_SCENARIOS } from './types.js';
+import { DEFAULT_TAKE_PROFIT_TARGETS, VOLATILITY_SCENARIOS } from './types.js';
 import * as fs from 'fs';
 
 const program = new Command();
 
 program
   .name('cpw')
-  .description('资本持久战实验框架 CLI')
-  .version('1.0.0');
+  .description('资本持久战实验框架 CLI (新范式)')
+  .version('2.0.0');
 
 // 单次实验命令
 program
@@ -33,7 +31,7 @@ program
   .option('-m, --market <type>', '市场类型 (gbm|garch|trending|mean_reverting)', 'gbm')
   .option('-s, --signal <type>', '信号策略 (trend_following|mean_reversion|breakout|random)', 'random')
   .option('-c, --candles <number>', 'K线数量', '2000')
-  .option('-r, --runs <number>', '蒙特卡洛次数', '1000')
+  .option('-r, --runs <number>', '蒙特卡洛次数', '100')
   .option('-o, --output <dir>', '输出目录', './results/custom')
   .option('--seed <number>', '随机种子')
   .action(async (options) => {
@@ -45,13 +43,14 @@ program
     const scenarioDesc = VOLATILITY_SCENARIOS[volatility] || `σ=${(volatility * 100).toFixed(1)}%`;
     
     console.log('='.repeat(60));
-    console.log('资本持久战实验');
+    console.log('资本持久战实验 (新范式)');
     console.log('='.repeat(60));
     console.log(`市场类型: ${options.market}`);
     console.log(`波动率: ${(volatility * 100).toFixed(1)}% (${scenarioDesc})`);
     console.log(`信号策略: ${options.signal}`);
     console.log(`K线数量: ${candleCount}`);
     console.log(`蒙特卡洛次数: ${monteCarloRuns}`);
+    console.log(`止盈线: ${DEFAULT_TAKE_PROFIT_TARGETS.join(', ')}`);
     console.log('='.repeat(60));
     
     const config: ExperimentConfig = {
@@ -77,15 +76,20 @@ program
           meanReversionTarget: 100,
         } : {}),
       },
-      signal: {
+      signals: [{
         type: options.signal as SignalStrategyType,
         params: getSignalParams(options.signal, seed),
+      }],
+      betting: {
+        takeProfitTargets: DEFAULT_TAKE_PROFIT_TARGETS,
+        winMultiplier: 2,
+        loseMultiplier: 0,
+        tradingCostRate: 0.0003,  // 0.03%
       },
       monteCarloRuns,
-      targetMultipliers: DEFAULT_TARGET_MULTIPLIERS,
     };
     
-    const runner = new ExperimentRunner();
+    const runner = new NewParadigmExperimentRunner();
     console.log('\n运行中...');
     const result = await runner.run(config);
     
@@ -96,36 +100,17 @@ program
       fs.mkdirSync(options.output, { recursive: true });
     }
     await saveReport(result, options.output);
-    fs.writeFileSync(`${options.output}/result.json`, exportToJSON([result]), 'utf-8');
+    fs.writeFileSync(`${options.output}/result.json`, exportToJSON(result), 'utf-8');
+    console.log(`\n结果已保存到: ${options.output}`);
   });
 
-// 预设实验命令
+// 新范式实验命令
 program
-  .command('exp1')
-  .description('运行实验1: 基础验证实验 (不同波动率)')
-  .action(async () => {
-    await import('./experiments/exp1-basic.js');
-  });
-
-program
-  .command('exp2')
-  .description('运行实验2: 信号策略对比实验')
-  .action(async () => {
-    await import('./experiments/exp2-signals.js');
-  });
-
-program
-  .command('exp3')
-  .description('运行实验3: 市场类型对比实验')
-  .action(async () => {
-    await import('./experiments/exp3-markets.js');
-  });
-
-program
-  .command('exp4')
-  .description('运行实验4: 全矩阵扫描实验')
-  .action(async () => {
-    await import('./experiments/exp4-matrix.js');
+  .command('exp-new')
+  .description('运行新范式实验 (止盈间隔分析)')
+  .option('--quick', '快速模式 (少量MC运行)')
+  .action(async (options) => {
+    await import('./experiments/exp-new-paradigm.js');
   });
 
 // 列出波动率场景
@@ -142,7 +127,20 @@ program
     console.log('      L倍杠杆 + σ波动率 = 等效 L×σ 波动率');
   });
 
-function getSignalParams(signalType: string, seed?: number): Record<string, number> {
+// 列出止盈线
+program
+  .command('targets')
+  .description('列出默认止盈线序列')
+  .action(() => {
+    console.log('\n默认止盈线序列 (M_T):');
+    console.log('='.repeat(50));
+    for (const target of DEFAULT_TAKE_PROFIT_TARGETS) {
+      console.log(`  M_T = ${target}x`);
+    }
+    console.log('\n核心指标: 达到各止盈线的平均K线间隔');
+  });
+
+function getSignalParams(signalType: string, seed?: number): Record<string, number | string | boolean> {
   switch (signalType) {
     case 'trend_following':
       return { shortPeriod: 5, longPeriod: 20 };

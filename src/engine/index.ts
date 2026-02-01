@@ -1,393 +1,525 @@
 /**
- * Backtest Engine - 回测引擎
+ * New Paradigm Backtest Engine - 新范式回测引擎
  * 
- * 核心功能:
- * 1. 运行单次回测: 在给定K线上执行策略
- * 2. 跟踪资产倍率历史
- * 3. 记录交易和达到目标的时间
- * 4. 运行蒙特卡洛模拟
+ * 核心架构：
+ * 1. 市场序列生成一次，复用于所有信号策略
+ * 2. 信号序列生成一次，复用于所有投注策略（不同 M_T）
+ * 3. 多账户并行追踪，各账户独立止盈、独立重置
+ * 
+ * 重要变更（双账户架构）：
+ * - 基准账户（BaselineTracker）：固定仓位=1，计算 C 值
+ * - 反马丁账户（MultiAccountTracker）：参考基准账户的 C 值
+ * - 成交价格：使用下一根K线开盘价（非当前收盘价）
+ * - 观察期：C=0 时为观察期，反马丁账户实际仓位=0
+ * 
+ * 评估指标变化：
+ * - 不再关注 E[M]（易被极端值影响）
+ * - 不再关注 P(M >= k)（时间拉长总能成功）
+ * - 核心关注：各 M_T 下止盈事件的平均时间间隔
  */
 
 import type { 
   Candle, 
   Signal,
   SignalStrategy, 
-  BacktestResult, 
-  TradeRecord,
+  SignalStrategyConfig,
   ExperimentConfig,
   ExperimentResult,
-  MDistributionStats,
+  SignalEvaluationResult,
+  MonteCarloRunResult,
+  AggregatedSignalResult,
+  AggregatedTakeProfitStats,
+  TakeProfitTargetStats,
+  SampleRunData,
+  TradeRecord,
 } from '../types.js';
-import { AntiMartingalePositionManager, type AntiMartingaleConfig } from '../position/index.js';
+import { MultiAccountTracker } from '../betting/index.js';
+import { BaselineTracker } from '../betting/baseline-tracker.js';
 import { createSignalStrategy } from '../signal/index.js';
 import { generateMarket } from '../market/generator.js';
 
 // ============================================
-// 回测引擎配置
+// 新范式回测引擎
 // ============================================
 
-export interface BacktestEngineConfig {
-  /** 目标倍率列表 */
-  targetMultipliers: number[];
-  /** 仓位管理配置 */
-  positionConfig?: Partial<AntiMartingaleConfig>;
-  /** 交易成本率 (基础成本率, 如 0.0005 = 0.05%) */
-  tradingCostRate?: number;
-  /** 杠杆倍数 (用于放大交易成本, 默认1) */
-  leverage?: number;
-}
-
-// ============================================
-// 回测引擎
-// ============================================
-
-export class BacktestEngine {
-  private config: BacktestEngineConfig;
-
-  constructor(config: BacktestEngineConfig) {
-    this.config = config;
-  }
-
+export class NewParadigmBacktestEngine {
   /**
-   * 运行单次回测
+   * 评估单个信号策略在给定市场上的表现
+   * 
+   * 重构说明（双账户架构）：
+   * 1. 基准账户（BaselineTracker）：
+   *    - 固定仓位 = 1
+   *    - 连续运行，不止盈/止损
+   *    - 计算 C 值（最大亏损速度）
+   *    - 记录基准净值曲线
+   * 
+   * 2. 反马丁账户（MultiAccountTracker）：
+   *    - 参考基准账户的 C 值
+   *    - C = 0 时为观察期，实际仓位 = 0
+   *    - 实盘期使用反马丁格尔仓位管理
+   * 
+   * 3. 成交价格改进：
+   *    - 信号在当前K线产生
+   *    - 成交在下一根K线开盘价执行
+   * 
+   * @param candles - 市场K线序列
+   * @param strategy - 信号策略
+   * @param tracker - 多账户追踪器
+   * @param recordSample - 是否记录样本数据（用于可视化）
+   * @returns 信号策略评估结果和可选的样本数据
    */
-  run(candles: Candle[], strategy: SignalStrategy): BacktestResult {
-    // 初始化仓位管理器
-    const positionManager = new AntiMartingalePositionManager(this.config.positionConfig);
-    strategy.reset();
+  evaluateSignalStrategy(
+    candles: Candle[],
+    strategy: SignalStrategy,
+    tracker: MultiAccountTracker,
+    recordSample: boolean = false
+  ): { result: SignalEvaluationResult; sampleData?: SampleRunData } {
+    // 重置追踪器
+    tracker.reset();
     
-    // 获取交易成本率和杠杆倍数
-    const baseTradingCostRate = this.config.tradingCostRate ?? 0;
-    const leverage = this.config.leverage ?? 1;
-    // 实际交易成本率 = 基础成本率 × 杠杆倍数
-    const effectiveTradingCostRate = baseTradingCostRate * leverage;
-
-    // 初始化跟踪变量
-    const multiplierHistory: number[] = [1]; // 初始倍率为1
-    const trades: TradeRecord[] = [];
-    const reachTargetIndices = new Map<number, number | null>();
-    
-    // 初始化目标倍率跟踪
-    for (const target of this.config.targetMultipliers) {
-      reachTargetIndices.set(target, null);
+    // 创建基准账户追踪器
+    const baseline = new BaselineTracker();
+    if (recordSample) {
+      baseline.enableDetailRecording();
     }
-
+    baseline.setTotalCandles(candles.length);
+    
+    // 启用样本记录（必须在 setTotalCandles 之前调用）
+    if (recordSample) {
+      tracker.enableSampleRecording();
+    }
+    
+    tracker.setTotalCandles(candles.length);
+    
+    // ============================================
+    // 信号和交易状态变量
+    // ============================================
+    
+    /** 当前持仓：1=多, 0=空仓, -1=空 */
+    let currentPosition = 0;
+    
+    /** 开仓价格 */
+    let entryPrice: number | null = null;
+    
+    /** 开仓K线索引（实际成交的K线） */
+    let entryIndex: number | null = null;
+    
+    /** 产生开仓信号的K线索引 */
+    let entrySignalIndex: number | null = null;
+    
+    /** 统计 */
+    let totalTradeCount = 0;
     let winCount = 0;
-    let maxConsecutiveWins = 0;
-    let maxConsecutiveLosses = 0;
-    let currentConsecutiveLosses = 0;
-
-    // 遍历K线
+    
+    // ============================================
+    // 待执行的信号变化（用于下一K线开盘价成交）
+    // ============================================
+    
+    /** 待执行的信号变化 */
+    let pendingSignal: Signal | null = null;
+    
+    /** 产生待执行信号的K线索引 */
+    let pendingSignalIndex: number | null = null;
+    
+    // ============================================
+    // 样本数据收集
+    // ============================================
+    
+    /** 每根K线的信号值 */
+    const signals: number[] = new Array(candles.length).fill(0);
+    
+    /** 交易记录 */
+    const trades: TradeRecord[] = [];
+    
+    // ============================================
+    // 主循环：遍历K线
+    // ============================================
+    
     for (let i = 0; i < candles.length; i++) {
-      const signal = strategy.generate(candles, i);
-      const currentPosition = positionManager.getPosition();
-      const entryPrice = positionManager.getEntryPrice();
-      const currentPrice = candles[i].close;
-
-      // 简化的交易逻辑: 只要目标仓位与当前仓位不同，就需要处理
-      if (signal !== currentPosition) {
-        // 1. 如果有现有仓位，先平仓
-        if (currentPosition !== 0 && entryPrice !== null) {
-          const pnlPercent = this.calculatePnL(currentPosition, entryPrice, currentPrice);
-          const positionSize = positionManager.getPositionSize();
-          const turnover = (entryPrice + currentPrice) * positionSize;
-          const tradingCost = turnover * effectiveTradingCostRate;
+      const candle = candles[i];
+      
+      // ============================================
+      // 步骤1：处理上一根K线的待执行信号（使用当前K线开盘价成交）
+      // ============================================
+      if (pendingSignal !== null && pendingSignalIndex !== null) {
+        const executionPrice = candle.open;  // 使用当前K线开盘价成交
+        
+        // 1a. 如果有持仓，先平仓
+        if (currentPosition !== 0 && entryPrice !== null && entryIndex !== null && entrySignalIndex !== null) {
+          const pnlPercent = this.calculatePnL(currentPosition, entryPrice, executionPrice);
+          const holdingPeriod = i - entryIndex;
           
-          // 处理交易结果
-          positionManager.processTradeResult(pnlPercent);
+          // 先更新基准账户（计算 C 值）
+          baseline.processTradeResult(pnlPercent, i, holdingPeriod, totalTradeCount);
+          const externalC = baseline.getEstimatedC();
           
-          // 扣除交易成本
-          if (tradingCost > 0) {
-            positionManager.deductCost(tradingCost);
-          }
+          // 再更新反马丁账户（使用基准账户的 C 值）
+          tracker.processTradeResult(
+            pnlPercent, 
+            i, 
+            entryPrice, 
+            executionPrice, 
+            entryIndex, 
+            totalTradeCount,
+            externalC
+          );
           
           // 记录交易
-          trades.push({
-            index: i,
-            position: currentPosition,
-            entryPrice,
-            exitPrice: currentPrice,
-            positionSize,
-            pnlPercent,
-            assetMultiplierAfter: positionManager.getState().assetMultiplier,
-            turnover,
-            tradingCost,
-          });
-
-          // 更新统计
-          if (pnlPercent > 0) {
-            winCount++;
-            currentConsecutiveLosses = 0;
-          } else if (pnlPercent < 0) {
-            currentConsecutiveLosses++;
-            maxConsecutiveLosses = Math.max(maxConsecutiveLosses, currentConsecutiveLosses);
+          if (recordSample) {
+            trades.push({
+              tradeIndex: totalTradeCount,
+              signalIndex: entrySignalIndex,
+              entryIndex: entryIndex,
+              exitSignalIndex: pendingSignalIndex,
+              exitIndex: i,
+              direction: currentPosition as 1 | -1,
+              entryPrice,
+              exitPrice: executionPrice,
+              holdingPeriod,
+              pnlPercent,
+              isWin: pnlPercent > 0,
+            });
           }
-          maxConsecutiveWins = Math.max(maxConsecutiveWins, positionManager.getState().consecutiveWins);
+          
+          // 统计
+          totalTradeCount++;
+          if (pnlPercent > 0) winCount++;
         }
-
-        // 2. 设置新仓位
-        if (signal !== 0) {
-          // 开新仓
-          positionManager.setPosition(signal, currentPrice);
+        
+        // 1b. 开新仓
+        if (pendingSignal !== 0) {
+          currentPosition = pendingSignal;
+          entryPrice = executionPrice;
+          entryIndex = i;
+          entrySignalIndex = pendingSignalIndex;
         } else {
-          // 平仓后保持空仓
-          positionManager.setPosition(0, null);
+          currentPosition = 0;
+          entryPrice = null;
+          entryIndex = null;
+          entrySignalIndex = null;
         }
+        
+        // 清除待执行信号
+        pendingSignal = null;
+        pendingSignalIndex = null;
       }
-
-      // 记录当前资产倍率
-      const currentMultiplier = positionManager.getState().assetMultiplier;
-      multiplierHistory.push(currentMultiplier);
-
-      // 检查是否达到目标倍率
-      for (const target of this.config.targetMultipliers) {
-        if (reachTargetIndices.get(target) === null && currentMultiplier >= target) {
-          reachTargetIndices.set(target, i);
-        }
+      
+      // ============================================
+      // 步骤2：生成当前K线的信号
+      // ============================================
+      const signal = strategy.generate(candles, i);
+      signals[i] = signal;
+      
+      // ============================================
+      // 步骤3：检测信号变化，记录为待执行
+      // ============================================
+      if (signal !== currentPosition) {
+        pendingSignal = signal;
+        pendingSignalIndex = i;
       }
     }
-
-    // 如果还有持仓,在最后平仓
-    const finalPosition = positionManager.getPosition();
-    const finalEntryPrice = positionManager.getEntryPrice();
-    if (finalPosition !== 0 && finalEntryPrice !== null) {
+    
+    // ============================================
+    // 处理最后一笔待执行信号（如果K线已结束）
+    // 注意：实际中最后一个信号无法执行（没有下一根K线的开盘价）
+    // 但为了完整性，我们用最后K线的收盘价处理未平仓交易
+    // ============================================
+    if (currentPosition !== 0 && entryPrice !== null && entryIndex !== null && entrySignalIndex !== null) {
       const exitPrice = candles[candles.length - 1].close;
-      const pnlPercent = this.calculatePnL(finalPosition, finalEntryPrice, exitPrice);
-      const positionSize = positionManager.getPositionSize();
-      const turnover = (finalEntryPrice + exitPrice) * positionSize;
-      const tradingCost = turnover * effectiveTradingCostRate;
+      const exitIndex = candles.length - 1;
+      const pnlPercent = this.calculatePnL(currentPosition, entryPrice, exitPrice);
+      const holdingPeriod = exitIndex - entryIndex;
       
-      positionManager.processTradeResult(pnlPercent);
+      // 先更新基准账户
+      baseline.processTradeResult(pnlPercent, exitIndex, holdingPeriod, totalTradeCount);
+      const externalC = baseline.getEstimatedC();
       
-      // 扣除交易成本
-      if (tradingCost > 0) {
-        positionManager.deductCost(tradingCost);
+      // 再更新反马丁账户
+      tracker.processTradeResult(
+        pnlPercent, 
+        exitIndex, 
+        entryPrice, 
+        exitPrice, 
+        entryIndex, 
+        totalTradeCount,
+        externalC
+      );
+      
+      // 记录交易
+      if (recordSample) {
+        trades.push({
+          tradeIndex: totalTradeCount,
+          signalIndex: entrySignalIndex,
+          entryIndex: entryIndex,
+          exitSignalIndex: exitIndex,  // 强制平仓，没有真正的退出信号
+          exitIndex: exitIndex,
+          direction: currentPosition as 1 | -1,
+          entryPrice,
+          exitPrice,
+          holdingPeriod,
+          pnlPercent,
+          isWin: pnlPercent > 0,
+        });
       }
       
-      trades.push({
-        index: candles.length - 1,
-        position: finalPosition,
-        entryPrice: finalEntryPrice,
-        exitPrice,
-        positionSize,
-        pnlPercent,
-        assetMultiplierAfter: positionManager.getState().assetMultiplier,
-        turnover,
-        tradingCost,
-      });
-
-      if (pnlPercent > 0) {
-        winCount++;
-      } else if (pnlPercent < 0) {
-        currentConsecutiveLosses++;
-        maxConsecutiveLosses = Math.max(maxConsecutiveLosses, currentConsecutiveLosses);
-      }
+      totalTradeCount++;
+      if (pnlPercent > 0) winCount++;
     }
-
-    const state = positionManager.getState();
     
-    // 计算总成交额和总交易成本
-    const totalTurnover = trades.reduce((sum, t) => sum + t.turnover, 0);
-    const totalTradingCost = trades.reduce((sum, t) => sum + t.tradingCost, 0);
+    // 完成基准账户
+    baseline.finalize();
     
-    return {
-      peakMultiplier: state.peakMultiplier,
-      finalMultiplier: state.assetMultiplier,
-      tradeCount: trades.length,
-      winCount,
-      winRate: trades.length > 0 ? winCount / trades.length : 0,
-      maxConsecutiveWins,
-      maxConsecutiveLosses,
-      multiplierHistory,
-      trades,
-      reachTargetIndices,
-      totalTurnover,
-      totalTradingCost,
+    const result: SignalEvaluationResult = {
+      signalType: strategy.type,
+      takeProfitStats: tracker.getStatsByTarget(),
+      totalTradeCount,
+      totalCandles: candles.length,
+      winRate: totalTradeCount > 0 ? winCount / totalTradeCount : 0,
     };
+    
+    // ============================================
+    // 收集样本数据
+    // ============================================
+    let sampleData: SampleRunData | undefined;
+    if (recordSample) {
+      sampleData = {
+        prices: candles.map(c => c.close),
+        multiplierCurves: tracker.getMultiplierCurves(),
+        takeProfitMarkers: tracker.getTakeProfitMarkers(),
+        stopLossMarkers: tracker.getStopLossMarkers(),
+        riskLineCurves: tracker.getRiskLineCurves(),
+        observationEndIndices: tracker.getObservationEndIndices(),
+        estimatedCCurves: tracker.getEstimatedCCurves(),
+        equityCurves: tracker.getEquityCurves(),
+        // 新增：完整样本数据
+        candles: candles,
+        signals: signals,
+        trades: trades,
+        baselineSnapshots: baseline.getSnapshots(),
+        baselineEquityCurve: baseline.getEquityCurve(),
+        accountSnapshots: tracker.getAccountSnapshots(),
+      };
+    }
+    
+    return { result, sampleData };
   }
 
   /**
    * 计算盈亏百分比
-   * 
-   * @param position - 持仓方向: 1=多, -1=空
-   * @param entryPrice - 入场价格
-   * @param exitPrice - 出场价格
-   * @returns 盈亏百分比
    */
   private calculatePnL(position: number, entryPrice: number, exitPrice: number): number {
-    // PnL = position * (exitPrice - entryPrice) / entryPrice
     return position * (exitPrice - entryPrice) / entryPrice;
   }
 }
 
 // ============================================
-// 蒙特卡洛实验运行器
+// 新范式实验运行器
 // ============================================
 
-export class ExperimentRunner {
+export class NewParadigmExperimentRunner {
   /**
-   * 运行实验
+   * 运行完整实验
    */
   async run(config: ExperimentConfig): Promise<ExperimentResult> {
     const startTime = Date.now();
+    const engine = new NewParadigmBacktestEngine();
     
-    const backtestResults: BacktestResult[] = [];
-    const peakMultipliers: number[] = [];
+    // 收集所有 MC 运行的结果
+    const allRunResults: MonteCarloRunResult[] = [];
     
-    // 保存样本数据用于可视化 (保存最好、中位、最差的样本)
-    const sampleData: Array<{
-      candles: Candle[];
-      multiplierHistory: number[];
-      peakMultiplier: number;
-      index: number;
-    }> = [];
-    
-    const engine = new BacktestEngine({
-      targetMultipliers: config.targetMultipliers,
-      tradingCostRate: config.tradingCostRate,
-      leverage: config.market.leverage,
-    });
-
-    // 运行蒙特卡洛模拟
-    for (let i = 0; i < config.monteCarloRuns; i++) {
-      // 生成市场数据 (每次使用不同种子)
+    // 蒙特卡洛循环
+    for (let runIndex = 0; runIndex < config.monteCarloRuns; runIndex++) {
+      // 是否记录样本数据（只记录前3次运行）
+      const recordSample = runIndex < 3;
+      
+      // 1. 生成市场序列（每次 MC 运行一次）
       const marketConfig = {
         ...config.market,
-        seed: config.market.seed !== undefined ? config.market.seed + i : undefined,
+        seed: config.market.seed !== undefined ? config.market.seed + runIndex : undefined,
       };
       const candles = generateMarket(marketConfig);
       
-      // 创建信号策略 (每次重置)
-      const seedOffset = config.signal.params?.seed !== undefined ? i : 0;
-      const strategy = createSignalStrategy({
-        ...config.signal,
-        params: config.signal.params?.seed !== undefined 
-          ? { ...config.signal.params, seed: (config.signal.params.seed as number) + seedOffset }
-          : config.signal.params,
-      });
+      // 2. 对每个信号策略评估
+      const signalResults: SignalEvaluationResult[] = [];
+      const sampleDataMap = new Map<string, SampleRunData>();
       
-      // 运行回测
-      const result = engine.run(candles, strategy);
-      backtestResults.push(result);
-      peakMultipliers.push(result.peakMultiplier);
-      
-      // 保存样本数据 (保存前5个和一些有代表性的)
-      if (i < 3 || result.peakMultiplier > 10 || result.peakMultiplier > (sampleData[0]?.peakMultiplier ?? 0)) {
-        sampleData.push({
-          candles,
-          multiplierHistory: result.multiplierHistory,
-          peakMultiplier: result.peakMultiplier,
-          index: i,
+      for (const signalConfig of config.signals) {
+        // 创建信号策略
+        const seedOffset = signalConfig.params?.seed !== undefined ? runIndex : 0;
+        const strategy = createSignalStrategy({
+          ...signalConfig,
+          params: signalConfig.params?.seed !== undefined 
+            ? { ...signalConfig.params, seed: (signalConfig.params.seed as number) + seedOffset }
+            : signalConfig.params,
         });
-        // 只保留最多6个样本，按峰值倍率排序
-        if (sampleData.length > 6) {
-          sampleData.sort((a, b) => b.peakMultiplier - a.peakMultiplier);
-          sampleData.length = 6;
-        }
-      }
-    }
-
-    // 计算统计数据
-    const mDistribution = this.calculateDistributionStats(peakMultipliers);
-    
-    // 计算达到目标的概率和平均时间
-    const reachProbabilities = new Map<number, number>();
-    const avgTradesToReach = new Map<number, number | null>();
-    const avgCandlesToReach = new Map<number, number | null>();
-    
-    for (const target of config.targetMultipliers) {
-      let reachCount = 0;
-      let totalTrades = 0;
-      let totalCandles = 0;
-      
-      for (const result of backtestResults) {
-        const reachIndex = result.reachTargetIndices.get(target);
-        if (reachIndex !== null && reachIndex !== undefined) {
-          reachCount++;
-          // 计算达到目标时的交易次数
-          const tradesBeforeTarget = result.trades.filter(t => t.index <= reachIndex).length;
-          totalTrades += tradesBeforeTarget;
-          totalCandles += reachIndex;
+        
+        // 创建多账户追踪器（每个信号策略独立）
+        const tracker = new MultiAccountTracker(
+          config.betting,
+          config.market.leverage ?? 1
+        );
+        
+        // 评估
+        const { result, sampleData } = engine.evaluateSignalStrategy(
+          candles, 
+          strategy, 
+          tracker,
+          recordSample
+        );
+        signalResults.push(result);
+        
+        // 保存样本数据
+        if (sampleData) {
+          sampleDataMap.set(strategy.type, sampleData);
         }
       }
       
-      const probability = reachCount / config.monteCarloRuns;
-      reachProbabilities.set(target, probability);
+      const runResult: MonteCarloRunResult = {
+        runIndex,
+        signalResults,
+      };
       
-      if (reachCount > 0) {
-        avgTradesToReach.set(target, totalTrades / reachCount);
-        avgCandlesToReach.set(target, totalCandles / reachCount);
-      } else {
-        avgTradesToReach.set(target, null);
-        avgCandlesToReach.set(target, null);
+      // 只为前3次运行保存样本数据
+      if (recordSample) {
+        runResult.sampleData = sampleDataMap;
       }
+      
+      allRunResults.push(runResult);
     }
-
-    // 计算平均胜率和最大连胜
-    const avgWinRate = backtestResults.reduce((sum, r) => sum + r.winRate, 0) / config.monteCarloRuns;
-    const avgMaxConsecutiveWins = backtestResults.reduce((sum, r) => sum + r.maxConsecutiveWins, 0) / config.monteCarloRuns;
     
-    // 计算平均总成交额
-    const avgTotalTurnover = backtestResults.reduce((sum, r) => sum + r.totalTurnover, 0) / config.monteCarloRuns;
+    // 3. 聚合所有 MC 运行的结果
+    const aggregatedResults = this.aggregateResults(allRunResults, config);
     
-    // 计算平均总交易成本
-    const avgTotalTradingCost = backtestResults.reduce((sum, r) => sum + r.totalTradingCost, 0) / config.monteCarloRuns;
-
     const elapsedMs = Date.now() - startTime;
-
-    // 准备样本运行数据
-    const sampleRuns = sampleData.map(s => ({
-      candles: s.candles,
-      multiplierHistory: s.multiplierHistory,
-      peakMultiplier: s.peakMultiplier,
-    }));
-
+    
     return {
       config,
-      mDistribution,
-      peakMultipliers,
-      reachProbabilities,
-      avgTradesToReach,
-      avgCandlesToReach,
-      avgWinRate,
-      avgMaxConsecutiveWins,
-      avgTotalTurnover,
-      avgTotalTradingCost,
+      signalResults: aggregatedResults,
+      monteCarloRuns: config.monteCarloRuns,
+      candlesPerRun: config.market.candleCount,
       elapsedMs,
-      sampleRuns,
+      // 保存少量样本用于可视化
+      sampleRuns: allRunResults.slice(0, 3),
     };
   }
 
   /**
-   * 计算分布统计
+   * 聚合多次 MC 运行的结果
    */
-  private calculateDistributionStats(values: number[]): MDistributionStats {
-    const sorted = [...values].sort((a, b) => a - b);
-    const n = sorted.length;
+  private aggregateResults(
+    runResults: MonteCarloRunResult[],
+    config: ExperimentConfig
+  ): AggregatedSignalResult[] {
+    const numRuns = runResults.length;
+    const signalTypes = config.signals.map(s => s.type);
     
-    const mean = values.reduce((sum, v) => sum + v, 0) / n;
-    const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / n;
-    const std = Math.sqrt(variance);
-    
-    const percentile = (p: number) => {
-      const index = Math.floor(p * n);
-      return sorted[Math.min(index, n - 1)];
-    };
+    return signalTypes.map((signalType, signalIndex) => {
+      // 收集该信号策略在所有运行中的结果
+      const signalRunResults = runResults.map(r => r.signalResults[signalIndex]);
+      
+      // 计算平均胜率和交易数
+      const avgWinRate = signalRunResults.reduce((sum, r) => sum + r.winRate, 0) / numRuns;
+      const avgTradeCount = signalRunResults.reduce((sum, r) => sum + r.totalTradeCount, 0) / numRuns;
+      
+      // 聚合各 M_T 的统计
+      const takeProfitStats = new Map<number, AggregatedTakeProfitStats>();
+      
+      for (const target of config.betting.takeProfitTargets) {
+        const aggregated = this.aggregateTakeProfitStats(
+          signalRunResults.map(r => r.takeProfitStats.get(target)!),
+          target
+        );
+        takeProfitStats.set(target, aggregated);
+      }
+      
+      return {
+        signalType,
+        takeProfitStats,
+        avgWinRate,
+        avgTradeCount,
+      };
+    });
+  }
 
-    return {
-      mean,
-      median: percentile(0.5),
-      std,
-      min: sorted[0],
-      max: sorted[n - 1],
-      percentiles: {
-        p5: percentile(0.05),
+  /**
+   * 聚合单个 M_T 在多次运行中的统计
+   */
+  private aggregateTakeProfitStats(
+    stats: TakeProfitTargetStats[],
+    targetMultiplier: number
+  ): AggregatedTakeProfitStats {
+    const numRuns = stats.length;
+    
+    // 收集所有止盈间隔
+    const allIntervals: number[] = [];
+    let totalRoundCount = 0;
+    let totalFrequency = 0;
+    
+    for (const stat of stats) {
+      totalRoundCount += stat.roundCount;
+      totalFrequency += stat.frequency;
+      for (const event of stat.events) {
+        allIntervals.push(event.intervalCandles);
+      }
+    }
+    
+    const avgRoundsPerRun = totalRoundCount / numRuns;
+    const avgFrequency = totalFrequency / numRuns;
+    
+    // 计算聚合统计
+    let intervalStats: AggregatedTakeProfitStats['intervalStats'];
+    
+    if (allIntervals.length === 0) {
+      intervalStats = {
+        mean: null,
+        median: null,
+        std: null,
+        min: null,
+        max: null,
+        p25: null,
+        p50: null,
+        p75: null,
+        p95: null,
+      };
+    } else {
+      const sorted = [...allIntervals].sort((a, b) => a - b);
+      const n = sorted.length;
+      const mean = allIntervals.reduce((sum, v) => sum + v, 0) / n;
+      const variance = allIntervals.reduce((sum, v) => sum + (v - mean) ** 2, 0) / n;
+      const std = Math.sqrt(variance);
+      
+      const percentile = (p: number) => {
+        const index = Math.floor(p * n);
+        return sorted[Math.min(index, n - 1)];
+      };
+      
+      intervalStats = {
+        mean,
+        median: percentile(0.5),
+        std,
+        min: sorted[0],
+        max: sorted[n - 1],
         p25: percentile(0.25),
         p50: percentile(0.5),
         p75: percentile(0.75),
         p95: percentile(0.95),
-        p99: percentile(0.99),
-      },
+      };
+    }
+    
+    return {
+      targetMultiplier,
+      totalRoundCount,
+      avgRoundsPerRun,
+      intervalStats,
+      avgFrequency,
     };
   }
 }
+
+// ============================================
+// 导出（保持向后兼容性）
+// ============================================
+
+// 旧的引擎类型别名
+export { NewParadigmBacktestEngine as BacktestEngine };
+export { NewParadigmExperimentRunner as ExperimentRunner };
