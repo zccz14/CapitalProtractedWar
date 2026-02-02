@@ -85,6 +85,8 @@ function buildFullResult(
   // 为每个信号策略加载样本数据
   for (const signalResult of lightResult.signalResults) {
     const signalId = signalResult.signalType;
+    // 获取该信号策略的样本索引（包含 baselinePnL）
+    const sampleIndices = lightResult.sampleIndicesMap?.get(signalId);
 
     for (const sampleType of ['best', 'median', 'worst'] as const) {
       const sampleData = loadSampleData(marketGroupId, signalId, bettingId, sampleType);
@@ -105,10 +107,13 @@ function buildFullResult(
         sampleRuns.push(runResult);
       }
 
+      // 从 sampleIndices 获取正确的 baselinePnL
+      const baselinePnL = sampleIndices?.[sampleType]?.baselinePnL ?? 0;
+
       runResult.sampleData!.set(signalId, sampleData);
       runResult.sampleMetadata!.set(signalId, {
         runIndex: runResult.runIndex,
-        baselinePnL: 0,
+        baselinePnL,
         sampleType,
       });
     }

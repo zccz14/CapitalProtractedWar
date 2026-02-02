@@ -62,6 +62,11 @@ export async function runPhase4(options: Phase4Options): Promise<Phase4Result> {
 
       // 只收集聚合结果，不读取样本数据
       const signalResults: AggregatedSignalResult[] = [];
+      // 收集各信号策略的样本索引
+      const sampleIndicesMap = new Map<
+        string,
+        { best: { marketId: string; baselinePnL: number }; median: { marketId: string; baselinePnL: number }; worst: { marketId: string; baselinePnL: number } }
+      >();
 
       for (const signalConfig of config.signals) {
         const signalId = generateSignalId(signalConfig);
@@ -95,6 +100,11 @@ export async function runPhase4(options: Phase4Options): Promise<Phase4Result> {
           avgWinRate: aggResult.avgWinRate,
           avgTradeCount: aggResult.avgTradeCount,
         });
+
+        // 收集样本索引（包含 baselinePnL）
+        if (aggResult.sampleIndices) {
+          sampleIndicesMap.set(signalConfig.type, aggResult.sampleIndices);
+        }
       }
 
       if (signalResults.length === 0) {
@@ -120,6 +130,7 @@ export async function runPhase4(options: Phase4Options): Promise<Phase4Result> {
         signalResults,
         monteCarloRuns: config.monteCarloRuns,
         candlesPerRun: config.candleCount,
+        sampleIndicesMap,
       });
 
       if (verbose) {

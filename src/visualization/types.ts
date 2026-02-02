@@ -8,6 +8,7 @@ import type {
   SampleRunData,
   MonteCarloRunResult,
 } from '../types.js';
+import type { SampleIndex } from '../cache/types.js';
 
 /**
  * 轻量级实验结果（不含样本数据）
@@ -18,6 +19,15 @@ export interface LightExperimentResult {
   signalResults: AggregatedSignalResult[];
   monteCarloRuns: number;
   candlesPerRun: number;
+  /** 各信号策略的代表性样本索引（key = signalType） */
+  sampleIndicesMap?: Map<
+    string,
+    {
+      best: SampleIndex;
+      median: SampleIndex;
+      worst: SampleIndex;
+    }
+  >;
 }
 
 /**
