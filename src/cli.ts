@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * CLI - 命令行接口（新范式）
- * 
+ *
  * 用法:
  *   npx tsx src/cli.ts run --volatility 0.1 --signal random --market gbm --runs 100
  *   npx tsx src/cli.ts exp-new   # 运行新范式实验

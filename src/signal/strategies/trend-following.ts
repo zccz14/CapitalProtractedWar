@@ -1,6 +1,6 @@
 /**
  * 趋势跟踪策略 (Trend Following)
- * 
+ *
  * 基于均线交叉的经典趋势跟踪策略：
  * - 金叉（短期均线上穿长期均线）做多
  * - 死叉（短期均线下穿长期均线）做空
@@ -45,7 +45,7 @@ export class TrendFollowingStrategy extends BaseStrategy<TrendFollowingParams> {
 
   generate(candles: Candle[], currentIndex: number): Signal {
     const { shortPeriod, longPeriod } = this.params;
-    
+
     // 需要足够的历史数据
     if (!this.hasEnoughData(currentIndex, longPeriod)) {
       return this.hold();

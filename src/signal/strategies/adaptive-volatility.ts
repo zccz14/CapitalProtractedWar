@@ -1,6 +1,6 @@
 /**
  * 自适应波动率策略 (Adaptive Volatility)
- * 
+ *
  * 根据历史波动率动态调整交易参数：
  * - 波动率计算：基于对数收益率的历史波动率 (HV)
  * - 状态分类：通过百分位排名分类波动率状态 (low/normal/high/extreme)
@@ -36,12 +36,12 @@ export interface VolatilityState {
 }
 
 /** 自适应模式 */
-export type AdaptiveMode = 
-  | 'period_scaling'      // 均线周期自适应
-  | 'threshold_scaling'   // 阈值自适应
-  | 'volatility_filter'   // 波动率过滤（择时）
+export type AdaptiveMode =
+  | 'period_scaling' // 均线周期自适应
+  | 'threshold_scaling' // 阈值自适应
+  | 'volatility_filter' // 波动率过滤（择时）
   | 'volatility_breakout' // 波动率突破信号
-  | 'full';               // 全部功能
+  | 'full'; // 全部功能
 
 export interface AdaptiveVolatilityParams {
   // === 基础信号参数 ===
@@ -154,10 +154,10 @@ const DEFAULT_PARAMS: AdaptiveVolatilityParams = {
 })
 export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityParams> {
   readonly type: SignalStrategyType = 'adaptive_volatility';
-  
+
   // 波动率历史记录 (用于计算百分位)
   private hvHistory: number[] = [];
-  
+
   // 波动率突破状态
   private volBreakoutDetected: boolean = false;
   private volBreakoutBar: number = 0;
@@ -172,7 +172,7 @@ export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityP
 
   generate(candles: Candle[], currentIndex: number): Signal {
     const { hvPeriod, volatilityLookback, adaptiveMode } = this.params;
-    
+
     // 需要足够的数据
     const minRequired = Math.max(hvPeriod, this.params.longPeriod) + volatilityLookback;
     if (!this.hasEnoughData(currentIndex, minRequired)) {
@@ -181,7 +181,7 @@ export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityP
 
     // 1. 计算当前波动率状态
     const volState = this.calculateVolatilityState(candles, currentIndex);
-    
+
     // 2. 检查波动率过滤
     if (this.shouldFilter(volState)) {
       // 如果有持仓，在极端波动时考虑平仓
@@ -203,20 +203,27 @@ export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityP
     const adaptedParams = this.getAdaptedParams(volState);
 
     // 5. 生成基础信号
-    const baseSignal = this.params.baseStrategy === 'trend'
-      ? this.generateTrendSignal(candles, currentIndex, adaptedParams)
-      : this.generateMeanReversionSignal(candles, currentIndex, adaptedParams);
+    const baseSignal =
+      this.params.baseStrategy === 'trend'
+        ? this.generateTrendSignal(candles, currentIndex, adaptedParams)
+        : this.generateMeanReversionSignal(candles, currentIndex, adaptedParams);
 
     return baseSignal;
   }
 
   /** 计算波动率状态 */
   private calculateVolatilityState(candles: Candle[], currentIndex: number): VolatilityState {
-    const { hvPeriod, volatilityLookback, lowVolPercentile, highVolPercentile, extremeVolPercentile } = this.params;
+    const {
+      hvPeriod,
+      volatilityLookback,
+      lowVolPercentile,
+      highVolPercentile,
+      extremeVolPercentile,
+    } = this.params;
 
     // 计算当前历史波动率 (HV)
     const currentHV = historicalVolatility(candles, currentIndex, hvPeriod);
-    
+
     // 更新波动率历史
     this.hvHistory.push(currentHV);
     if (this.hvHistory.length > volatilityLookback) {
@@ -227,7 +234,11 @@ export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityP
     const percentile = percentileRank(this.hvHistory, currentHV);
 
     // 计算波动率趋势 (短期HV vs 长期HV)
-    const shortTermHV = historicalVolatility(candles, currentIndex, Math.max(2, Math.floor(hvPeriod / 2)));
+    const shortTermHV = historicalVolatility(
+      candles,
+      currentIndex,
+      Math.max(2, Math.floor(hvPeriod / 2))
+    );
     const trend = currentHV > 0 ? (shortTermHV - currentHV) / currentHV : 0;
 
     // 分类波动率状态
@@ -248,7 +259,7 @@ export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityP
   /** 检查是否应该过滤（不交易） */
   private shouldFilter(volState: VolatilityState): boolean {
     const { adaptiveMode, filterExtremeVol, filterLowVol } = this.params;
-    
+
     if (adaptiveMode !== 'volatility_filter' && adaptiveMode !== 'full') {
       return false;
     }
@@ -265,8 +276,8 @@ export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityP
 
   /** 处理波动率突破信号 */
   private handleVolatilityBreakout(
-    candles: Candle[], 
-    currentIndex: number, 
+    candles: Candle[],
+    currentIndex: number,
     volState: VolatilityState
   ): Signal {
     const { volBreakoutPercentile, volBreakoutConfirmBars } = this.params;
@@ -281,11 +292,11 @@ export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityP
     // 等待价格确认
     if (this.volBreakoutDetected) {
       const barsSinceBreakout = currentIndex - this.volBreakoutBar;
-      
+
       if (barsSinceBreakout >= volBreakoutConfirmBars) {
         const currentPrice = candles[currentIndex].close;
         const priceChange = (currentPrice - this.priceAtBreakout) / this.priceAtBreakout;
-        
+
         // 重置突破状态
         this.volBreakoutDetected = false;
 
@@ -310,11 +321,15 @@ export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityP
     longPeriod: number;
     deviationThreshold: number;
   } {
-    const { 
-      shortPeriod, longPeriod, deviationThreshold,
-      adaptiveMode, 
-      lowVolPeriodScale, highVolPeriodScale,
-      lowVolThresholdScale, highVolThresholdScale 
+    const {
+      shortPeriod,
+      longPeriod,
+      deviationThreshold,
+      adaptiveMode,
+      lowVolPeriodScale,
+      highVolPeriodScale,
+      lowVolThresholdScale,
+      highVolThresholdScale,
     } = this.params;
 
     let periodScale = 1;
@@ -347,7 +362,7 @@ export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityP
 
   /** 生成趋势跟踪信号 */
   private generateTrendSignal(
-    candles: Candle[], 
+    candles: Candle[],
     currentIndex: number,
     params: { shortPeriod: number; longPeriod: number }
   ): Signal {
@@ -377,7 +392,7 @@ export class AdaptiveVolatilityStrategy extends BaseStrategy<AdaptiveVolatilityP
 
   /** 生成均值回归信号 */
   private generateMeanReversionSignal(
-    candles: Candle[], 
+    candles: Candle[],
     currentIndex: number,
     params: { longPeriod: number; deviationThreshold: number }
   ): Signal {

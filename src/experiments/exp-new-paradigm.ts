@@ -14,8 +14,11 @@
  * - 只为代表性样本生成完整曲线数据
  */
 
-import type { SignalStrategyConfig, BettingStrategyConfig } from '../types.js';
-import { DEFAULT_TAKE_PROFIT_TARGETS } from '../types.js';
+import {
+  DEFAULT_TAKE_PROFIT_TARGETS,
+  type SignalStrategyConfig,
+  type BettingStrategyConfig,
+} from '../types.js';
 import type { ExperimentOptions, FullExperimentConfig } from '../cache/types.js';
 import { runPhase1, runPhase2, runPhase3, runPhase4 } from './phases/index.js';
 
@@ -111,8 +114,10 @@ export async function runExperiment(options: ExperimentOptions): Promise<string>
   // 打印配置
   console.log(`\n模式: ${quick ? '快速测试' : '完整实验'}`);
   console.log(`K线数: ${config.candleCount} | MC次数: ${config.monteCarloRuns}`);
-  console.log(`波动率场景: ${config.volatilities.map((v) => (v * 100).toFixed(0) + '%').join(', ')}`);
-  console.log(`漂移率场景: ${config.drifts.map((d) => (d * 100).toFixed(0) + '%').join(', ')}`);
+  console.log(
+    `波动率场景: ${config.volatilities.map((v) => `${(v * 100).toFixed(0)}%`).join(', ')}`
+  );
+  console.log(`漂移率场景: ${config.drifts.map((d) => `${(d * 100).toFixed(0)}%`).join(', ')}`);
   console.log(`信号策略: ${config.signals.map((s) => s.type).join(', ')}`);
   console.log(`止盈线: ${config.betting.takeProfitTargets.join(', ')}`);
   console.log(`输出目录: ${outputDir}`);

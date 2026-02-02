@@ -1,6 +1,6 @@
 /**
  * Capital Protracted War - 资本持久战实验框架
- * 
+ *
  * 核心模块导出（新范式 v2）
  */
 
@@ -11,7 +11,7 @@ export * from './types.js';
 export { generateMarket } from './market/generator.js';
 
 // 信号策略
-export { 
+export {
   createSignalStrategy,
   TrendFollowingStrategy,
   MeanReversionStrategy,
@@ -30,12 +30,12 @@ export {
 } from './position/index.js';
 
 // 回测引擎（新范式）
-export { 
+export {
   NewParadigmBacktestEngine,
   NewParadigmExperimentRunner,
   // 别名，向后兼容
-  BacktestEngine, 
-  ExperimentRunner 
+  BacktestEngine,
+  ExperimentRunner,
 } from './engine/index.js';
 
 // 分析工具
@@ -51,11 +51,7 @@ export {
 } from './analysis/index.js';
 
 // 可视化
-export {
-  generateHTMLReport,
-  saveReport,
-  saveComparisonReport,
-} from './visualization/index.js';
+export { generateHTMLReport, saveReport, saveComparisonReport } from './visualization/index.js';
 
 // 随机数工具
 export { createRandom, Random, type SeededRandom } from './utils/random.js';

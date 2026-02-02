@@ -1,11 +1,11 @@
 /**
  * 引擎版本常量
- * 
+ *
  * 用于缓存 invalidation：当引擎版本变更时，旧缓存自动失效
- * 
+ *
  * 版本变更规则：
  * - 修改核心算法逻辑时，递增主版本号
  * - 修改输出格式时，递增次版本号
  * - 修复 bug 时，递增修订号
  */
-export const ENGINE_VERSION = "1.0.0";
+export const ENGINE_VERSION = '1.0.0';

@@ -1,6 +1,6 @@
 /**
  * 策略索引文件
- * 
+ *
  * 导入所有策略并触发自动注册
  */
 
@@ -10,8 +10,8 @@ export { MeanReversionStrategy, type MeanReversionParams } from './mean-reversio
 export { BreakoutStrategy, type BreakoutParams } from './breakout.js';
 export { Breakout4Strategy, type Breakout4Params } from './breakout-4.js';
 export { RandomStrategy, type RandomParams } from './random.js';
-export { 
-  AdaptiveVolatilityStrategy, 
+export {
+  AdaptiveVolatilityStrategy,
   type AdaptiveVolatilityParams,
   type VolatilityRegime,
   type VolatilityState,

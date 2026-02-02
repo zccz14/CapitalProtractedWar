@@ -1,6 +1,6 @@
 /**
  * 技术指标计算模块
- * 
+ *
  * 提供常用技术指标的高效计算实现
  */
 
@@ -24,7 +24,7 @@ export function sma(
   priceKey: 'open' | 'high' | 'low' | 'close' = 'close'
 ): number {
   if (endIndex < period - 1) return NaN;
-  
+
   let sum = 0;
   for (let i = endIndex - period + 1; i <= endIndex; i++) {
     sum += candles[i][priceKey];
@@ -46,17 +46,17 @@ export function ema(
   priceKey: 'open' | 'high' | 'low' | 'close' = 'close'
 ): number {
   if (endIndex < period - 1) return NaN;
-  
+
   const multiplier = 2 / (period + 1);
-  
+
   // 初始值使用 SMA
   let emaValue = sma(candles, period - 1, period, priceKey);
-  
+
   // 从 period 开始计算 EMA
   for (let i = period; i <= endIndex; i++) {
     emaValue = (candles[i][priceKey] - emaValue) * multiplier + emaValue;
   }
-  
+
   return emaValue;
 }
 
@@ -71,11 +71,7 @@ export function ema(
  * @param period 周期
  * @returns 日化波动率
  */
-export function historicalVolatility(
-  candles: Candle[],
-  endIndex: number,
-  period: number
-): number {
+export function historicalVolatility(candles: Candle[], endIndex: number, period: number): number {
   if (endIndex < period) return NaN;
 
   const returns: number[] = [];
@@ -96,10 +92,10 @@ export function historicalVolatility(
  */
 export function trueRange(candles: Candle[], index: number): number {
   if (index < 1) return candles[index].high - candles[index].low;
-  
+
   const current = candles[index];
   const prevClose = candles[index - 1].close;
-  
+
   return Math.max(
     current.high - current.low,
     Math.abs(current.high - prevClose),
@@ -113,26 +109,22 @@ export function trueRange(candles: Candle[], index: number): number {
  * @param endIndex 结束索引（包含）
  * @param period 周期 (默认14)
  */
-export function atr(
-  candles: Candle[],
-  endIndex: number,
-  period: number = 14
-): number {
+export function atr(candles: Candle[], endIndex: number, period: number = 14): number {
   if (endIndex < period) return NaN;
-  
+
   let atrValue = 0;
-  
+
   // 初始 ATR 为前 period 个 TR 的平均
   for (let i = 1; i <= period; i++) {
     atrValue += trueRange(candles, i);
   }
   atrValue /= period;
-  
+
   // 使用平滑公式继续计算
   for (let i = period + 1; i <= endIndex; i++) {
     atrValue = (atrValue * (period - 1) + trueRange(candles, i)) / period;
   }
-  
+
   return atrValue;
 }
 
@@ -153,7 +145,7 @@ export function highest(
   priceKey: 'open' | 'high' | 'low' | 'close' = 'high'
 ): number {
   if (endIndex < period - 1) return NaN;
-  
+
   let max = -Infinity;
   for (let i = endIndex - period + 1; i <= endIndex; i++) {
     max = Math.max(max, candles[i][priceKey]);
@@ -174,7 +166,7 @@ export function lowest(
   priceKey: 'open' | 'high' | 'low' | 'close' = 'low'
 ): number {
   if (endIndex < period - 1) return NaN;
-  
+
   let min = Infinity;
   for (let i = endIndex - period + 1; i <= endIndex; i++) {
     min = Math.min(min, candles[i][priceKey]);
@@ -198,16 +190,16 @@ export function bollingerBands(
   if (endIndex < period - 1) {
     return { middle: NaN, upper: NaN, lower: NaN };
   }
-  
+
   const middle = sma(candles, endIndex, period);
-  
+
   // 计算标准差
   let sumSquaredDiff = 0;
   for (let i = endIndex - period + 1; i <= endIndex; i++) {
     sumSquaredDiff += (candles[i].close - middle) ** 2;
   }
   const std = Math.sqrt(sumSquaredDiff / period);
-  
+
   return {
     middle,
     upper: middle + stdDev * std,
@@ -225,16 +217,12 @@ export function bollingerBands(
  * @param endIndex 结束索引（包含）
  * @param period 周期 (默认14)
  */
-export function rsi(
-  candles: Candle[],
-  endIndex: number,
-  period: number = 14
-): number {
+export function rsi(candles: Candle[], endIndex: number, period: number = 14): number {
   if (endIndex < period) return NaN;
-  
+
   let gains = 0;
   let losses = 0;
-  
+
   // 计算初始平均涨跌
   for (let i = 1; i <= period; i++) {
     const change = candles[i].close - candles[i - 1].close;
@@ -244,10 +232,10 @@ export function rsi(
       losses -= change;
     }
   }
-  
+
   let avgGain = gains / period;
   let avgLoss = losses / period;
-  
+
   // 使用平滑公式继续计算
   for (let i = period + 1; i <= endIndex; i++) {
     const change = candles[i].close - candles[i - 1].close;
@@ -259,10 +247,10 @@ export function rsi(
       avgLoss = (avgLoss * (period - 1) - change) / period;
     }
   }
-  
+
   if (avgLoss === 0) return 100;
   const rs = avgGain / avgLoss;
-  return 100 - (100 / (1 + rs));
+  return 100 - 100 / (1 + rs);
 }
 
 /**
@@ -271,16 +259,12 @@ export function rsi(
  * @param endIndex 结束索引（包含）
  * @param period 周期
  */
-export function roc(
-  candles: Candle[],
-  endIndex: number,
-  period: number
-): number {
+export function roc(candles: Candle[], endIndex: number, period: number): number {
   if (endIndex < period) return NaN;
-  
+
   const currentPrice = candles[endIndex].close;
   const pastPrice = candles[endIndex - period].close;
-  
+
   return (currentPrice - pastPrice) / pastPrice;
 }
 
@@ -296,10 +280,10 @@ export function roc(
  */
 export function percentileRank(values: number[], currentValue: number): number {
   if (values.length === 0) return 50;
-  
+
   const sorted = [...values].sort((a, b) => a - b);
-  const rank = sorted.findIndex(v => v >= currentValue);
-  
+  const rank = sorted.findIndex((v) => v >= currentValue);
+
   if (rank === -1) return 100;
   return (rank / sorted.length) * 100;
 }
@@ -310,11 +294,11 @@ export function percentileRank(values: number[], currentValue: number): number {
  */
 export function standardDeviation(values: number[]): number {
   if (values.length < 2) return 0;
-  
+
   const mean = values.reduce((a, b) => a + b, 0) / values.length;
-  const squaredDiffs = values.map(v => (v - mean) ** 2);
+  const squaredDiffs = values.map((v) => (v - mean) ** 2);
   const variance = squaredDiffs.reduce((a, b) => a + b, 0) / (values.length - 1);
-  
+
   return Math.sqrt(variance);
 }
 
@@ -332,7 +316,7 @@ export function returns(
   logReturn: boolean = true
 ): number[] {
   const result: number[] = [];
-  
+
   for (let i = Math.max(1, startIndex); i <= endIndex; i++) {
     if (logReturn) {
       result.push(Math.log(candles[i].close / candles[i - 1].close));
@@ -340,6 +324,6 @@ export function returns(
       result.push((candles[i].close - candles[i - 1].close) / candles[i - 1].close);
     }
   }
-  
+
   return result;
 }

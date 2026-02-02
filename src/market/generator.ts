@@ -3,13 +3,13 @@
  * 支持 GBM, GARCH, 趋势市场, 均值回归市场
  */
 
-import type { Candle, MarketConfig, MarketType } from '../types.js';
+import type { Candle, MarketConfig } from '../types.js';
 import { Random } from '../utils/random.js';
 
 /**
  * 几何布朗运动 (GBM) 生成器
  * dS = μS dt + σS dW
- * 
+ *
  * 注意：volatility 参数是年化波动率，会自动转换为日波动率
  */
 export function generateGBM(config: MarketConfig, random: Random): Candle[] {
@@ -18,7 +18,7 @@ export function generateGBM(config: MarketConfig, random: Random): Candle[] {
     drift: muAnnual = 0,
     initialPrice: S0 = 100,
     candleCount,
-    tradingDaysPerYear = 252,  // 每年交易日数
+    tradingDaysPerYear = 252, // 每年交易日数
   } = config;
 
   // 转换为日波动率和日漂移率
@@ -33,7 +33,8 @@ export function generateGBM(config: MarketConfig, random: Random): Candle[] {
   for (let i = 0; i < candleCount; i++) {
     const epsilon = random.nextGaussian();
     // 对数收益率 (使用日波动率)
-    const logReturn = (muDaily - 0.5 * sigmaDaily * sigmaDaily) * dt + sigmaDaily * Math.sqrt(dt) * epsilon;
+    const logReturn =
+      (muDaily - 0.5 * sigmaDaily * sigmaDaily) * dt + sigmaDaily * Math.sqrt(dt) * epsilon;
     const newS = S * Math.exp(logReturn);
 
     // 生成K线 (简化: open=前close, close=newS, high/low基于波动)
@@ -59,7 +60,7 @@ export function generateGBM(config: MarketConfig, random: Random): Candle[] {
  * GARCH(1,1) 生成器
  * 模拟波动率聚集效应
  * σ²_t = ω + α*ε²_{t-1} + β*σ²_{t-1}
- * 
+ *
  * 注意：volatility 参数是年化波动率
  */
 export function generateGARCH(config: MarketConfig, random: Random): Candle[] {
@@ -89,9 +90,9 @@ export function generateGARCH(config: MarketConfig, random: Random): Candle[] {
   for (let i = 0; i < candleCount; i++) {
     const epsilon = random.nextGaussian();
     const sigma = Math.sqrt(sigma2);
-    
+
     // 对数收益率
-    const logReturn = (muDaily - 0.5 * sigma2) + sigma * epsilon;
+    const logReturn = muDaily - 0.5 * sigma2 + sigma * epsilon;
     const newS = S * Math.exp(logReturn);
 
     // 更新GARCH方差 (波动率聚集)
@@ -133,7 +134,7 @@ export function generateTrending(config: MarketConfig, random: Random): Candle[]
  * 均值回归市场生成器
  * Ornstein-Uhlenbeck过程
  * dS = θ(μ - S)dt + σdW
- * 
+ *
  * 注意：volatility 参数是年化波动率
  */
 export function generateMeanReverting(config: MarketConfig, random: Random): Candle[] {
@@ -157,7 +158,7 @@ export function generateMeanReverting(config: MarketConfig, random: Random): Can
 
   for (let i = 0; i < candleCount; i++) {
     const epsilon = random.nextGaussian();
-    
+
     // OU过程: dS = θ(μ - S)dt + σdW
     const dS = thetaDaily * (targetPrice - S) * dt + sigmaDaily * S * Math.sqrt(dt) * epsilon;
     const newS = Math.max(S + dS, 0.01); // 防止价格为负
@@ -215,30 +216,30 @@ export function calculateRealizedVolatility(candles: Candle[]): number {
 
   const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
   const variance = returns.reduce((sum, r) => sum + (r - mean) ** 2, 0) / (returns.length - 1);
-  
+
   return Math.sqrt(variance);
 }
 
 /**
  * 合并K线周期
  * 将 N 根K线合并为1根，放大等效波动率
- * 
+ *
  * @param candles 原始K线数据
  * @param period 合并周期 (N根合并为1根)
  * @returns 合并后的K线数据
- * 
+ *
  * 理论依据：
  * - 合并后波动率 ≈ 原波动率 × √period
  * - 合并后K线数量 = floor(原数量 / period)
  */
 export function aggregateCandles(candles: Candle[], period: number): Candle[] {
   if (period <= 1) return candles;
-  
+
   const aggregated: Candle[] = [];
-  
+
   for (let i = 0; i + period <= candles.length; i += period) {
     const batch = candles.slice(i, i + period);
-    
+
     // 合并规则：
     // - open: 第一根的open
     // - close: 最后一根的close
@@ -250,13 +251,13 @@ export function aggregateCandles(candles: Candle[], period: number): Candle[] {
       time: batch[0].time,
       open: batch[0].open,
       close: batch[batch.length - 1].close,
-      high: Math.max(...batch.map(c => c.high)),
-      low: Math.min(...batch.map(c => c.low)),
+      high: Math.max(...batch.map((c) => c.high)),
+      low: Math.min(...batch.map((c) => c.low)),
       volume: batch.reduce((sum, c) => sum + (c.volume ?? 0), 0) || undefined,
     };
-    
+
     aggregated.push(merged);
   }
-  
+
   return aggregated;
 }

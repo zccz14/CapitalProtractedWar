@@ -1,11 +1,11 @@
 /**
  * Signal Strategies - 交易信号策略
- * 
+ *
  * 模块化架构：
  * - base.ts: 基类和注册机制
  * - indicators/: 技术指标库
  * - strategies/: 各策略实现
- * 
+ *
  * 支持的策略类型：
  * 1. trend_following - 趋势跟踪 (均线交叉)
  * 2. mean_reversion - 均值回归

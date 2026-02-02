@@ -1,14 +1,14 @@
 /**
  * Capital Protracted War - Core Type Definitions
  * 资本持久战实验框架 - 核心类型定义
- * 
+ *
  * 新范式：实验 = 市场序列 × 信号策略 × 投注策略
- * 
+ *
  * 核心概念：
  * - 市场序列：由市场生成器根据特征参数生成
  * - 信号策略：底层策略对市场序列的反应
  * - 投注策略：反马丁格尔投注 + 止盈线 M_T
- * 
+ *
  * 评估指标：
  * - 不再关注 E[M]（易被极端值影响）
  * - 不再关注 P(M >= k)（时间拉长总能成功）
@@ -20,7 +20,7 @@
 // ============================================
 
 export interface Candle {
-  time: number;       // Unix timestamp (ms)
+  time: number; // Unix timestamp (ms)
   open: number;
   high: number;
   low: number;
@@ -32,19 +32,19 @@ export interface Candle {
 // 市场生成器类型
 // ============================================
 
-export type MarketType = 
-  | 'gbm'             // 几何布朗运动 (独立同分布波动)
-  | 'garch'           // GARCH模型 (波动率聚集)
-  | 'trending'        // 趋势市场 (有正向漂移)
+export type MarketType =
+  | 'gbm' // 几何布朗运动 (独立同分布波动)
+  | 'garch' // GARCH模型 (波动率聚集)
+  | 'trending' // 趋势市场 (有正向漂移)
   | 'mean_reverting'; // 均值回归市场
 
 export interface MarketConfig {
   type: MarketType;
   /** 年化波动率 σ (会自动转换为日波动率) */
   volatility: number;
-  /** 
+  /**
    * 杠杆倍数 (默认1)
-   * 
+   *
    * 用于计算等效场景：
    * - 等效波动率 = baseVolatility × leverage (已体现在 volatility 字段)
    * - 交易成本放大 = baseCostRate × leverage
@@ -60,7 +60,7 @@ export interface MarketConfig {
   seed?: number;
   /** 每年交易日数 (默认252) */
   tradingDaysPerYear?: number;
-  
+
   // GARCH 特有参数
   /** GARCH omega参数 (长期方差常数) */
   garchOmega?: number;
@@ -68,7 +68,7 @@ export interface MarketConfig {
   garchAlpha?: number;
   /** GARCH beta参数 (对昨日方差的记忆) */
   garchBeta?: number;
-  
+
   // 均值回归特有参数
   /** 均值回归速度 (年化) */
   meanReversionSpeed?: number;
@@ -82,7 +82,7 @@ export interface MarketConfig {
 
 /**
  * 交易信号 - 目标仓位
- * 
+ *
  * 使用带符号的数值表示:
  * -  1 = 满仓做多
  * -  0 = 空仓 (平仓)
@@ -90,14 +90,14 @@ export interface MarketConfig {
  */
 export type Signal = number;
 
-export type SignalStrategyType = 
-  | 'trend_following'      // 趋势跟踪 (动量策略)
-  | 'mean_reversion'       // 均值回归
-  | 'breakout'             // 突破策略
-  | 'breakout_4'           // 4根K线突破策略
-  | 'random'               // 随机策略 (对照组)
-  | 'adaptive_volatility'  // 自适应波动率策略
-  | 'boll_reversion';      // 布林带回归策略
+export type SignalStrategyType =
+  | 'trend_following' // 趋势跟踪 (动量策略)
+  | 'mean_reversion' // 均值回归
+  | 'breakout' // 突破策略
+  | 'breakout_4' // 4根K线突破策略
+  | 'random' // 随机策略 (对照组)
+  | 'adaptive_volatility' // 自适应波动率策略
+  | 'boll_reversion'; // 布林带回归策略
 
 export interface SignalStrategyConfig {
   type: SignalStrategyType;
@@ -125,7 +125,7 @@ export const DEFAULT_TAKE_PROFIT_TARGETS = [2, 4, 8, 16, 32, 64, 128, 256, 512, 
 
 /**
  * 投注策略配置
- * 
+ *
  * 新风控框架：
  * - Position(t) = StopLoss > 0 ? max(1, floor(VC / StopLoss)) : 0
  * - VC(t) = PnL(t) - RiskLine(t)
@@ -142,7 +142,7 @@ export interface BettingStrategyConfig {
 
 /**
  * 止盈事件记录
- * 
+ *
  * 止盈条件：VC(t) >= M_T
  */
 export interface TakeProfitEvent {
@@ -162,7 +162,7 @@ export interface TakeProfitEvent {
 
 /**
  * 止损事件记录
- * 
+ *
  * 止损条件：VC(t) <= 0
  * 即 PnL(t) <= RiskLine(t)
  */
@@ -191,7 +191,7 @@ export interface StopLossEvent {
 
 /**
  * 风控统计结果
- * 
+ *
  * 核心变量：
  * - C(t): 基准现金流速度 = max(亏损额/交易时间)
  * - StopLoss(t): 基准止损额 = 历史单笔最大浮亏
@@ -255,7 +255,7 @@ export interface TakeProfitTargetStats {
 
 /**
  * 虚拟账户状态（用于多账户并行追踪）
- * 
+ *
  * 新风控框架核心状态：
  * - RealizedPnL(t): 已实现盈亏（止盈/止损时锁定）
  * - UnrealizedPnL(t): 未实现盈亏（当前轮次累计，止盈/止损时清零）
@@ -263,7 +263,7 @@ export interface TakeProfitTargetStats {
  * - RiskLine(t): 风控线，每K线下降 C(t)，止盈/止损后重置为0
  * - VC(t) = UnrealizedPnL(t) - RiskLine(t): 风险资金
  * - Position(t): 仓位（非负整数）
- * 
+ *
  * 止盈条件：UnrealizedPnL(t) >= M_T
  * 止损条件：VC(t) <= 0
  */
@@ -308,7 +308,7 @@ export interface SignalEvaluationResult {
 
 /**
  * 单笔交易记录
- * 
+ *
  * 记录交易的完整信息，用于审计和调试
  */
 export interface TradeRecord {
@@ -340,12 +340,12 @@ export interface TradeRecord {
 
 /**
  * 基准账户快照
- * 
+ *
  * 基准账户特点：
  * - 固定仓位 = 1
  * - 连续运行，不止盈/止损
  * - 用于计算 C 值和 StopLoss 值
- * 
+ *
  * 核心变量：
  * - C(t) = max(亏损额/交易时间)：基准现金流速度
  * - StopLoss(t) = 历史单笔最大浮亏：基准止损额
@@ -369,9 +369,9 @@ export interface BaselineSnapshot {
 
 /**
  * 投注账户状态快照
- * 
+ *
  * 记录每笔交易后的账户状态变化，用于审计
- * 
+ *
  * 核心变量：
  * - RealizedPnL(t): 已实现盈亏
  * - UnrealizedPnL(t): 未实现盈亏
@@ -379,7 +379,7 @@ export interface BaselineSnapshot {
  * - RiskLine(t): 风控线
  * - VC(t) = UnrealizedPnL(t) - RiskLine(t): 风险资金
  * - Position(t) = StopLoss > 0 ? max(1, floor(VC/StopLoss)) : 0
- * 
+ *
  * 止盈条件：UnrealizedPnL >= M_T
  * 止损条件：VC <= 0
  */
@@ -390,7 +390,7 @@ export interface AccountSnapshot {
   tradeIndex: number;
   /** 事件类型 */
   eventType: 'trade_close' | 'take_profit' | 'stop_loss' | 'observing';
-  
+
   // 核心风控变量
   /** 已实现盈亏 RealizedPnL(t) */
   realizedPnL: number;
@@ -408,7 +408,7 @@ export interface AccountSnapshot {
   estimatedC: number;
   /** 仓位大小 Position(t)（非负整数） */
   positionSize: number;
-  
+
   // 交易详情
   /** 单位仓位PnL百分比 */
   pnlPercent: number;
@@ -420,7 +420,7 @@ export interface AccountSnapshot {
 
 /**
  * 样本数据 - 用于可视化
- * 
+ *
  * 新风控框架的核心曲线：
  * - RealizedPnL 曲线：已实现盈亏
  * - UnrealizedPnL 曲线：未实现盈亏（当前轮次）
@@ -454,11 +454,11 @@ export interface SampleRunData {
   estimatedCCurves: Map<number, number[]>;
   /** StopLoss 值曲线（针对特定 M_T） */
   stopLossCurves: Map<number, number[]>;
-  
+
   // ============================================
   // 以下为样本详细报告所需的字段
   // ============================================
-  
+
   /** 完整K线数据 */
   candles?: Candle[];
   /** 每根K线的信号值 */
@@ -475,7 +475,7 @@ export interface SampleRunData {
 
 /**
  * 样本元数据
- * 
+ *
  * 记录代表性样本的选择信息
  */
 export interface SampleMetadata {
@@ -496,9 +496,9 @@ export interface MonteCarloRunResult {
   /** 各信号策略的评估结果 */
   signalResults: SignalEvaluationResult[];
   /** 样本数据（可选，仅用于可视化） */
-  sampleData?: Map<string, SampleRunData>;  // key = signalType
+  sampleData?: Map<string, SampleRunData>; // key = signalType
   /** 样本元数据（可选，记录代表性样本的选择信息） */
-  sampleMetadata?: Map<string, SampleMetadata>;  // key = signalType
+  sampleMetadata?: Map<string, SampleMetadata>; // key = signalType
 }
 
 // ============================================
@@ -510,19 +510,19 @@ export interface ExperimentConfig {
   name: string;
   /** 实验描述 */
   description?: string;
-  
+
   /** 市场配置 */
   market: MarketConfig;
-  
+
   /** 信号策略配置列表（同一市场下测试多个策略） */
   signals: SignalStrategyConfig[];
-  
+
   /** 投注策略配置 */
   betting: BettingStrategyConfig;
-  
+
   /** 蒙特卡洛模拟次数 */
   monteCarloRuns: number;
-  
+
   /** 输出目录 */
   outputDir?: string;
 }
@@ -594,15 +594,15 @@ export interface ExperimentResult {
 // ============================================
 
 export const VOLATILITY_SCENARIOS: Record<number, string> = {
-  0.005: "股票1x杠杆 / 低波动债券",
-  0.01:  "股票2x杠杆 / 外汇10x杠杆",
-  0.02:  "股票5x杠杆 / 加密货币现货",
-  0.05:  "股票10x杠杆 / BTC现货",
-  0.10:  "BTC 2x杠杆 / 山寨币现货",
-  0.20:  "BTC 5x杠杆 / MEME币",
-  0.50:  "BTC 10x杠杆 / 极端MEME",
-  1.00:  "BTC 20x杠杆",
-  2.00:  "BTC 50x杠杆",
+  0.005: '股票1x杠杆 / 低波动债券',
+  0.01: '股票2x杠杆 / 外汇10x杠杆',
+  0.02: '股票5x杠杆 / 加密货币现货',
+  0.05: '股票10x杠杆 / BTC现货',
+  0.1: 'BTC 2x杠杆 / 山寨币现货',
+  0.2: 'BTC 5x杠杆 / MEME币',
+  0.5: 'BTC 10x杠杆 / 极端MEME',
+  1.0: 'BTC 20x杠杆',
+  2.0: 'BTC 50x杠杆',
 };
 
 // ============================================

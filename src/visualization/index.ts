@@ -1,6 +1,6 @@
 /**
  * Visualization Module - 可视化模块（新范式）
- * 
+ *
  * 多层级报告系统：
  * 1. 总结报告 (index.html) - 实验总览，带链接导航到详细报告
  * 2. 市场报告 (market_xxx.html) - 特定市场条件下的信号策略对比
@@ -8,7 +8,14 @@
  * 4. 详细报告 (detail_xxx.html) - 市场×信号×M_T 的完整分析
  */
 
-import type { ExperimentResult, AggregatedSignalResult, SignalEvaluationResult, SampleRunData } from '../types.js';
+import type {
+  ExperimentResult,
+  AggregatedSignalResult,
+  SampleRunData,
+  TradeRecord,
+  BaselineSnapshot,
+  AccountSnapshot,
+} from '../types.js';
 import { calculateHistogram } from '../analysis/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -122,8 +129,8 @@ const COMMON_STYLES = `
 
 function formatNumber(value: number | null, decimals: number = 0): string {
   if (value === null) return 'N/A';
-  if (value >= 1e6) return (value / 1e6).toFixed(1) + 'M';
-  if (value >= 1e3) return (value / 1e3).toFixed(1) + 'K';
+  if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
+  if (value >= 1e3) return `${(value / 1e3).toFixed(1)}K`;
   return value.toFixed(decimals);
 }
 
@@ -150,38 +157,44 @@ function generateIntervalHistogramSVG(
 ): string {
   if (intervals.length === 0) {
     return `<svg width="${width}" height="80">
-      <text x="${width/2}" y="40" text-anchor="middle" fill="#999" font-size="14">M_T=${targetMultiplier}x 无止盈事件数据</text>
+      <text x="${width / 2}" y="40" text-anchor="middle" fill="#999" font-size="14">M_T=${targetMultiplier}x 无止盈事件数据</text>
     </svg>`;
   }
 
   const padding = { top: 40, right: 30, bottom: 50, left: 60 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  
+
   const { binEdges, counts } = calculateHistogram(intervals, 25);
   const maxCount = Math.max(...counts);
-  
+
   const barWidth = chartWidth / counts.length;
-  const bars = counts.map((count, i) => {
-    const x = padding.left + i * barWidth;
-    const barHeight = maxCount > 0 ? (count / maxCount) * chartHeight : 0;
-    const y = padding.top + chartHeight - barHeight;
-    return `<rect x="${x}" y="${y}" width="${Math.max(barWidth - 1, 1)}" height="${barHeight}" fill="#4a90d9" opacity="0.85"/>`;
-  }).join('\n');
-  
-  const xTicks = [0, 0.5, 1].map(p => {
-    const index = Math.floor(p * (binEdges.length - 1));
-    const value = binEdges[index];
-    const x = padding.left + p * chartWidth;
-    return `<text x="${x}" y="${height - 15}" text-anchor="middle" font-size="11" fill="#666">${formatNumber(value)}</text>`;
-  }).join('\n');
-  
+  const bars = counts
+    .map((count, i) => {
+      const x = padding.left + i * barWidth;
+      const barHeight = maxCount > 0 ? (count / maxCount) * chartHeight : 0;
+      const y = padding.top + chartHeight - barHeight;
+      return `<rect x="${x}" y="${y}" width="${Math.max(barWidth - 1, 1)}" height="${barHeight}" fill="#4a90d9" opacity="0.85"/>`;
+    })
+    .join('\n');
+
+  const xTicks = [0, 0.5, 1]
+    .map((p) => {
+      const index = Math.floor(p * (binEdges.length - 1));
+      const value = binEdges[index];
+      const x = padding.left + p * chartWidth;
+      return `<text x="${x}" y="${height - 15}" text-anchor="middle" font-size="11" fill="#666">${formatNumber(value)}</text>`;
+    })
+    .join('\n');
+
   const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
   const sorted = [...intervals].sort((a, b) => a - b);
   const median = sorted[Math.floor(sorted.length / 2)];
-  
-  const meanX = padding.left + ((mean - binEdges[0]) / (binEdges[binEdges.length-1] - binEdges[0] || 1)) * chartWidth;
-  
+
+  const meanX =
+    padding.left +
+    ((mean - binEdges[0]) / (binEdges[binEdges.length - 1] - binEdges[0] || 1)) * chartWidth;
+
   return `
 <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -213,15 +226,15 @@ function generateIntervalHistogramSVG(
 function generateHeatmapSVG(result: ExperimentResult): string {
   const targets = result.config.betting.takeProfitTargets;
   const signals = result.signalResults;
-  
+
   const cellWidth = 70;
   const cellHeight = 36;
   const labelWidth = 140;
   const labelHeight = 40;
-  
+
   const width = labelWidth + targets.length * cellWidth + 60;
   const height = labelHeight + signals.length * cellHeight + 80;
-  
+
   const allValues: number[] = [];
   for (const signal of signals) {
     for (const [_, stats] of signal.takeProfitStats) {
@@ -230,16 +243,16 @@ function generateHeatmapSVG(result: ExperimentResult): string {
       }
     }
   }
-  
+
   if (allValues.length === 0) {
     return `<svg width="${width}" height="100">
-      <text x="${width/2}" y="50" text-anchor="middle" fill="#999">无有效数据</text>
+      <text x="${width / 2}" y="50" text-anchor="middle" fill="#999">无有效数据</text>
     </svg>`;
   }
-  
+
   const minVal = Math.min(...allValues);
   const maxVal = Math.max(...allValues);
-  
+
   const cells: string[] = [];
   signals.forEach((signal, si) => {
     targets.forEach((target, ti) => {
@@ -247,32 +260,36 @@ function generateHeatmapSVG(result: ExperimentResult): string {
       const value = stats?.intervalStats.mean;
       const x = labelWidth + ti * cellWidth;
       const y = labelHeight + si * cellHeight;
-      
+
       if (value !== null && value !== undefined) {
         const color = getHeatmapColor(value, minVal, maxVal);
         cells.push(`
           <rect x="${x}" y="${y}" width="${cellWidth - 2}" height="${cellHeight - 2}" fill="${color}" rx="4"/>
-          <text x="${x + cellWidth/2}" y="${y + cellHeight/2 + 4}" text-anchor="middle" font-size="11" fill="white" font-weight="500">${formatNumber(value)}</text>
+          <text x="${x + cellWidth / 2}" y="${y + cellHeight / 2 + 4}" text-anchor="middle" font-size="11" fill="white" font-weight="500">${formatNumber(value)}</text>
         `);
       } else {
         cells.push(`
           <rect x="${x}" y="${y}" width="${cellWidth - 2}" height="${cellHeight - 2}" fill="#e9ecef" rx="4"/>
-          <text x="${x + cellWidth/2}" y="${y + cellHeight/2 + 4}" text-anchor="middle" font-size="11" fill="#adb5bd">-</text>
+          <text x="${x + cellWidth / 2}" y="${y + cellHeight / 2 + 4}" text-anchor="middle" font-size="11" fill="#adb5bd">-</text>
         `);
       }
     });
   });
-  
-  const rowLabels = signals.map((signal, i) => {
-    const y = labelHeight + i * cellHeight + cellHeight / 2 + 4;
-    return `<text x="${labelWidth - 10}" y="${y}" text-anchor="end" font-size="12" fill="#495057">${signal.signalType}</text>`;
-  }).join('\n');
-  
-  const colLabels = targets.map((target, i) => {
-    const x = labelWidth + i * cellWidth + cellWidth / 2;
-    return `<text x="${x}" y="${labelHeight - 10}" text-anchor="middle" font-size="10" fill="#495057">${target}x</text>`;
-  }).join('\n');
-  
+
+  const rowLabels = signals
+    .map((signal, i) => {
+      const y = labelHeight + i * cellHeight + cellHeight / 2 + 4;
+      return `<text x="${labelWidth - 10}" y="${y}" text-anchor="end" font-size="12" fill="#495057">${signal.signalType}</text>`;
+    })
+    .join('\n');
+
+  const colLabels = targets
+    .map((target, i) => {
+      const x = labelWidth + i * cellWidth + cellWidth / 2;
+      return `<text x="${x}" y="${labelHeight - 10}" text-anchor="middle" font-size="10" fill="#495057">${target}x</text>`;
+    })
+    .join('\n');
+
   return `
 <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
   <style>text { font-family: -apple-system, sans-serif; }</style>
@@ -303,7 +320,7 @@ function generateHeatmapSVG(result: ExperimentResult): string {
 
 /**
  * 生成净值曲线图 SVG
- * 
+ *
  * 特点：
  * - 初始值为 0（累计盈亏）
  * - y=0 基线用灰色虚线标记
@@ -319,56 +336,58 @@ function generateEquityChartSVG(
 ): string {
   if (equities.length === 0) {
     return `<svg width="${width}" height="80">
-      <text x="${width/2}" y="40" text-anchor="middle" fill="#999" font-size="14">无净值数据</text>
+      <text x="${width / 2}" y="40" text-anchor="middle" fill="#999" font-size="14">无净值数据</text>
     </svg>`;
   }
 
   const padding = { top: 35, right: 40, bottom: 30, left: 60 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  
+
   // 降采样以提高性能（最多1000个点）
   const sampleRate = Math.max(1, Math.floor(equities.length / 1000));
   const sampledEquities = equities.filter((_, i) => i % sampleRate === 0);
-  
+
   const minE = Math.min(0, ...sampledEquities);
   const maxE = Math.max(0, ...sampledEquities);
   const eRange = maxE - minE || 1;
-  
+
   // 计算 y=0 的位置
   const zeroY = padding.top + chartHeight - ((0 - minE) / eRange) * chartHeight;
-  
+
   // 生成路径点
   const points = sampledEquities.map((e, i) => {
     const x = padding.left + (i / (sampledEquities.length - 1)) * chartWidth;
     const y = padding.top + chartHeight - ((e - minE) / eRange) * chartHeight;
     return { x, y, equity: e };
   });
-  
+
   // 主曲线路径
-  const pathD = `M ${points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ')}`;
-  
+  const pathD = `M ${points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ')}`;
+
   // 创建正值区域和负值区域的填充路径
   // 使用剪切路径来分别填充正负区域
   const fillPathD = `${pathD} L ${width - padding.right},${zeroY} L ${padding.left},${zeroY} Z`;
-  
+
   // 最终值决定曲线颜色
   const finalEquity = equities[equities.length - 1] ?? 0;
   const curveColor = finalEquity >= 0 ? '#27ae60' : '#e74c3c';
-  
+
   // Y轴刻度
   const yValues = [minE, 0, maxE].filter((v, i, arr) => arr.indexOf(v) === i);
-  const yTicks = yValues.map(val => {
-    const y = padding.top + chartHeight - ((val - minE) / eRange) * chartHeight;
-    const isZero = val === 0;
-    return `
+  const yTicks = yValues
+    .map((val) => {
+      const y = padding.top + chartHeight - ((val - minE) / eRange) * chartHeight;
+      const isZero = val === 0;
+      return `
       <line x1="${padding.left - 5}" y1="${y}" x2="${padding.left}" y2="${y}" stroke="${isZero ? '#666' : '#ccc'}" stroke-width="1"/>
       <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" font-size="10" fill="${isZero ? '#666' : '#999'}">${val.toFixed(2)}</text>
     `;
-  }).join('');
-  
+    })
+    .join('');
+
   const displayTitle = title + (targetMultiplier ? ` (M_T=${targetMultiplier}x)` : '');
-  
+
   return `
 <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
   <style>text { font-family: -apple-system, sans-serif; }</style>
@@ -437,22 +456,22 @@ function generatePriceChartSVG(
 ): string {
   if (prices.length === 0) {
     return `<svg width="${width}" height="80">
-      <text x="${width/2}" y="40" text-anchor="middle" fill="#999" font-size="14">无价格数据</text>
+      <text x="${width / 2}" y="40" text-anchor="middle" fill="#999" font-size="14">无价格数据</text>
     </svg>`;
   }
 
   const padding = { top: 30, right: 40, bottom: 30, left: 60 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  
+
   // 降采样以提高性能（最多1000个点）
   const sampleRate = Math.max(1, Math.floor(prices.length / 1000));
   const sampledPrices = prices.filter((_, i) => i % sampleRate === 0);
-  
+
   const minPrice = Math.min(...sampledPrices);
   const maxPrice = Math.max(...sampledPrices);
   const priceRange = maxPrice - minPrice || 1;
-  
+
   // 生成路径
   const points = sampledPrices.map((price, i) => {
     const x = padding.left + (i / (sampledPrices.length - 1)) * chartWidth;
@@ -460,17 +479,19 @@ function generatePriceChartSVG(
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   });
   const pathD = `M ${points.join(' L ')}`;
-  
+
   // Y轴刻度
-  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(p => {
-    const price = minPrice + p * priceRange;
-    const y = padding.top + chartHeight - p * chartHeight;
-    return `
+  const yTicks = [0, 0.25, 0.5, 0.75, 1]
+    .map((p) => {
+      const price = minPrice + p * priceRange;
+      const y = padding.top + chartHeight - p * chartHeight;
+      return `
       <line x1="${padding.left - 5}" y1="${y}" x2="${padding.left}" y2="${y}" stroke="#ccc" stroke-width="1"/>
       <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" font-size="10" fill="#666">${price.toFixed(1)}</text>
     `;
-  }).join('');
-  
+    })
+    .join('');
+
   return `
 <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
   <style>text { font-family: -apple-system, sans-serif; }</style>
@@ -520,71 +541,81 @@ function generateVCChartSVG(
 ): string {
   if (vcCurve.length === 0) {
     return `<svg width="${width}" height="80">
-      <text x="${width/2}" y="40" text-anchor="middle" fill="#999" font-size="14">无数据</text>
+      <text x="${width / 2}" y="40" text-anchor="middle" fill="#999" font-size="14">无数据</text>
     </svg>`;
   }
 
   const padding = { top: 35, right: 50, bottom: 30, left: 60 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  
+
   // 降采样以提高性能（最多1000个点）
   const sampleRate = Math.max(1, Math.floor(vcCurve.length / 1000));
   const sampledVC = vcCurve.filter((_, i) => i % sampleRate === 0);
   const sampledUnrealizedPnL = unrealizedPnLCurve.filter((_, i) => i % sampleRate === 0);
   const sampledRiskLine = riskLineCurve.filter((_, i) => i % sampleRate === 0);
   const sampledPnL = pnlCurve?.filter((_, i) => i % sampleRate === 0);
-  
+
   // 计算 Y 轴范围（包含 UnrealizedPnL、RiskLine、VC、PnL、止盈线）
-  const allValues = [...sampledVC, ...sampledUnrealizedPnL, ...sampledRiskLine, ...(sampledPnL ?? []), targetMultiplier, 0];
+  const allValues = [
+    ...sampledVC,
+    ...sampledUnrealizedPnL,
+    ...sampledRiskLine,
+    ...(sampledPnL ?? []),
+    targetMultiplier,
+    0,
+  ];
   const minY = Math.min(...allValues);
   const maxY = Math.max(...allValues);
   const yRange = maxY - minY || 1;
-  
+
   // 坐标转换函数
   const toX = (i: number) => padding.left + (i / (sampledVC.length - 1)) * chartWidth;
   const toY = (v: number) => padding.top + chartHeight - ((v - minY) / yRange) * chartHeight;
-  
+
   // 生成 VC 曲线路径（蓝色）
   const vcPoints = sampledVC.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`);
   const vcPathD = `M ${vcPoints.join(' L ')}`;
-  
+
   // 生成 UnrealizedPnL 曲线路径（绿色虚线）
-  const unrealizedPnLPoints = sampledUnrealizedPnL.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`);
+  const unrealizedPnLPoints = sampledUnrealizedPnL.map(
+    (v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`
+  );
   const unrealizedPnLPathD = `M ${unrealizedPnLPoints.join(' L ')}`;
-  
+
   // 生成 PnL 曲线路径（绿色实线）
   let pnlPathD = '';
   if (sampledPnL && sampledPnL.length > 0) {
     const pnlPoints = sampledPnL.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`);
     pnlPathD = `M ${pnlPoints.join(' L ')}`;
   }
-  
+
   // 生成 RiskLine 曲线路径（红色）
   const riskLinePoints = sampledRiskLine.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`);
   const riskLinePathD = `M ${riskLinePoints.join(' L ')}`;
-  
+
   // 止盈线位置
   const targetY = toY(targetMultiplier);
-  
+
   // 零线位置
   const zeroY = toY(0);
-  
+
   // 止盈标记点（绿色圆点）
   const tpMarkersSVG = takeProfitMarkers
-    .filter(idx => idx < vcCurve.length)
-    .map(idx => {
+    .filter((idx) => idx < vcCurve.length)
+    .map((idx) => {
       const sampledIdx = Math.floor(idx / sampleRate);
       const x = toX(sampledIdx);
       const vc = sampledVC[sampledIdx] ?? 0;
       const y = toY(vc);
       return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5" fill="#27ae60" stroke="white" stroke-width="1.5"/>`;
-    }).join('\n');
-  
+    })
+    .join('\n');
+
   // 止损标记点（红色叉号）
   const slMarkersSVG = stopLossMarkers
-    .filter(idx => idx < vcCurve.length)
-    .map(idx => {
+    .filter((idx) => idx < vcCurve.length)
+    .map((idx) => {
       const sampledIdx = Math.floor(idx / sampleRate);
       const x = toX(sampledIdx);
       const vc = sampledVC[sampledIdx] ?? 0;
@@ -594,8 +625,9 @@ function generateVCChartSVG(
         <line x1="${x - size}" y1="${y - size}" x2="${x + size}" y2="${y + size}" stroke="#e74c3c" stroke-width="2.5"/>
         <line x1="${x - size}" y1="${y + size}" x2="${x + size}" y2="${y - size}" stroke="#e74c3c" stroke-width="2.5"/>
       `;
-    }).join('\n');
-  
+    })
+    .join('\n');
+
   // 观察期区域（灰色半透明）
   let observationArea = '';
   if (observationEndIndex && observationEndIndex > 0) {
@@ -608,20 +640,24 @@ function generateVCChartSVG(
             text-anchor="middle" font-size="10" fill="#888">观察期</text>
     `;
   }
-  
+
   // Y轴刻度
-  const yTickValues = [minY, 0, targetMultiplier / 2, targetMultiplier, maxY].filter(v => v >= minY && v <= maxY);
-  const uniqueYTicks = [...new Set(yTickValues.map(v => v.toFixed(2)))].map(s => parseFloat(s));
-  const yTicks = uniqueYTicks.map(val => {
-    const y = toY(val);
-    return `
+  const yTickValues = [minY, 0, targetMultiplier / 2, targetMultiplier, maxY].filter(
+    (v) => v >= minY && v <= maxY
+  );
+  const uniqueYTicks = [...new Set(yTickValues.map((v) => v.toFixed(2)))].map((s) => parseFloat(s));
+  const yTicks = uniqueYTicks
+    .map((val) => {
+      const y = toY(val);
+      return `
       <line x1="${padding.left - 5}" y1="${y}" x2="${padding.left}" y2="${y}" stroke="#ccc" stroke-width="1"/>
       <text x="${padding.left - 8}" y="${y + 4}" text-anchor="end" font-size="9" fill="#666">${val.toFixed(2)}</text>
     `;
-  }).join('');
-  
+    })
+    .join('');
+
   const displayTitle = title || `风险资金 VC 曲线 M_T=${targetMultiplier}`;
-  
+
   return `
 <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
   <style>text { font-family: -apple-system, sans-serif; }</style>
@@ -699,6 +735,7 @@ function generateVCChartSVG(
 // 资金曲线图 SVG（含风控线）- 旧版保留
 // ============================================
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function generateMultiplierChartSVG(
   multipliers: number[],
   takeProfitMarkers: number[],
@@ -712,23 +749,23 @@ function generateMultiplierChartSVG(
 ): string {
   if (multipliers.length === 0) {
     return `<svg width="${width}" height="80">
-      <text x="${width/2}" y="40" text-anchor="middle" fill="#999" font-size="14">无资金数据</text>
+      <text x="${width / 2}" y="40" text-anchor="middle" fill="#999" font-size="14">无资金数据</text>
     </svg>`;
   }
 
   const padding = { top: 35, right: 40, bottom: 30, left: 60 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  
+
   // 降采样以提高性能（最多1000个点）
   const sampleRate = Math.max(1, Math.floor(multipliers.length / 1000));
   const sampledMultipliers = multipliers.filter((_, i) => i % sampleRate === 0);
   const sampledRiskLine = riskLine?.filter((_, i) => i % sampleRate === 0);
-  
+
   const minM = Math.min(0, ...sampledMultipliers, ...(sampledRiskLine ?? []));
   const maxM = Math.max(...sampledMultipliers, targetMultiplier * 1.1);
   const mRange = maxM - minM || 1;
-  
+
   // 生成资金曲线路径
   const points = sampledMultipliers.map((m, i) => {
     const x = padding.left + (i / (sampledMultipliers.length - 1)) * chartWidth;
@@ -736,7 +773,7 @@ function generateMultiplierChartSVG(
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   });
   const pathD = `M ${points.join(' L ')}`;
-  
+
   // 生成风控线路径（红色实线）
   let riskLinePathD = '';
   if (sampledRiskLine && sampledRiskLine.length > 0) {
@@ -747,25 +784,26 @@ function generateMultiplierChartSVG(
     });
     riskLinePathD = `M ${riskPoints.join(' L ')}`;
   }
-  
+
   // 止盈线位置
   const targetY = padding.top + chartHeight - ((targetMultiplier - minM) / mRange) * chartHeight;
-  
+
   // 止盈标记点（绿色圆点）
   const tpMarkers = takeProfitMarkers
-    .filter(idx => idx < multipliers.length)
-    .map(idx => {
+    .filter((idx) => idx < multipliers.length)
+    .map((idx) => {
       const sampledIdx = Math.floor(idx / sampleRate);
       const x = padding.left + (sampledIdx / (sampledMultipliers.length - 1)) * chartWidth;
       return `<circle cx="${x.toFixed(1)}" cy="${targetY.toFixed(1)}" r="4" fill="#27ae60" stroke="white" stroke-width="1"/>`;
-    }).join('\n');
-  
+    })
+    .join('\n');
+
   // 止损标记点（红色叉号）
   let slMarkers = '';
   if (stopLossMarkers && stopLossMarkers.length > 0) {
     slMarkers = stopLossMarkers
-      .filter(idx => idx < multipliers.length)
-      .map(idx => {
+      .filter((idx) => idx < multipliers.length)
+      .map((idx) => {
         const sampledIdx = Math.floor(idx / sampleRate);
         const x = padding.left + (sampledIdx / (sampledMultipliers.length - 1)) * chartWidth;
         const m = multipliers[idx] ?? 1;
@@ -776,13 +814,16 @@ function generateMultiplierChartSVG(
           <line x1="${x - size}" y1="${y - size}" x2="${x + size}" y2="${y + size}" stroke="#e74c3c" stroke-width="2"/>
           <line x1="${x - size}" y1="${y + size}" x2="${x + size}" y2="${y - size}" stroke="#e74c3c" stroke-width="2"/>
         `;
-      }).join('\n');
+      })
+      .join('\n');
   }
-  
+
   // 观察期区域（灰色半透明）
   let observationArea = '';
   if (observationEndIndex && observationEndIndex > 0) {
-    const obsEndX = padding.left + (Math.floor(observationEndIndex / sampleRate) / (sampledMultipliers.length - 1)) * chartWidth;
+    const obsEndX =
+      padding.left +
+      (Math.floor(observationEndIndex / sampleRate) / (sampledMultipliers.length - 1)) * chartWidth;
     observationArea = `
       <rect x="${padding.left}" y="${padding.top}" 
             width="${obsEndX - padding.left}" height="${chartHeight}" 
@@ -791,20 +832,24 @@ function generateMultiplierChartSVG(
             text-anchor="middle" font-size="9" fill="#888">观察期</text>
     `;
   }
-  
+
   // Y轴刻度
-  const yValues = [minM < 0 ? minM : 0, 1, targetMultiplier / 2, targetMultiplier, maxM].filter(v => v >= minM && v <= maxM);
-  const yTicks = [...new Set(yValues)].map(val => {
-    const y = padding.top + chartHeight - ((val - minM) / mRange) * chartHeight;
-    return `
+  const yValues = [minM < 0 ? minM : 0, 1, targetMultiplier / 2, targetMultiplier, maxM].filter(
+    (v) => v >= minM && v <= maxM
+  );
+  const yTicks = [...new Set(yValues)]
+    .map((val) => {
+      const y = padding.top + chartHeight - ((val - minM) / mRange) * chartHeight;
+      return `
       <line x1="${padding.left - 5}" y1="${y}" x2="${padding.left}" y2="${y}" stroke="#ccc" stroke-width="1"/>
       <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" font-size="10" fill="#666">${val.toFixed(1)}x</text>
     `;
-  }).join('');
-  
+    })
+    .join('');
+
   const displayTitle = title || `资金曲线 M_T=${targetMultiplier}x`;
   const slCount = stopLossMarkers?.length ?? 0;
-  
+
   return `
 <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
   <style>text { font-family: -apple-system, sans-serif; }</style>
@@ -860,20 +905,20 @@ function generateMultiplierChartSVG(
 function generateSignalDetailHTML(
   result: ExperimentResult,
   signalResult: AggregatedSignalResult,
-  baseDir: string
+  _baseDir: string
 ): string {
   const { config } = result;
   const signalType = signalResult.signalType;
-  
+
   // 收集分布图数据
   const distributionCharts: string[] = [];
   const keyTargets = config.betting.takeProfitTargets.slice(0, 6); // 前6个 M_T
-  
+
   if (result.sampleRuns && result.sampleRuns.length > 0) {
     for (const target of keyTargets) {
       const intervals: number[] = [];
       for (const run of result.sampleRuns) {
-        const sr = run.signalResults.find(s => s.signalType === signalType);
+        const sr = run.signalResults.find((s) => s.signalType === signalType);
         const stats = sr?.takeProfitStats.get(target);
         if (stats) {
           for (const event of stats.events) {
@@ -882,19 +927,21 @@ function generateSignalDetailHTML(
         }
       }
       if (intervals.length > 0) {
-        distributionCharts.push(generateIntervalHistogramSVG(intervals, target, signalType, 380, 250));
+        distributionCharts.push(
+          generateIntervalHistogramSVG(intervals, target, signalType, 380, 250)
+        );
       }
     }
   }
-  
+
   // 生成价格走势图和资金曲线图（使用第一个样本运行的数据）
   let priceChartHTML = '';
   let multiplierChartsHTML = '';
-  
+
   if (result.sampleRuns && result.sampleRuns.length > 0) {
     const firstRun = result.sampleRuns[0];
     const sampleData = firstRun.sampleData?.get(signalType);
-    
+
     if (sampleData) {
       // K线走势图
       priceChartHTML = `
@@ -906,37 +953,39 @@ function generateSignalDetailHTML(
           </div>
         </div>
       `;
-      
+
       // 资金曲线图（选取几个关键的 M_T）
-      const chartTargets = [2, 4, 8, 16].filter(t => sampleData.unrealizedPnLCurves.has(t));
+      const chartTargets = [2, 4, 8, 16].filter((t) => sampleData.unrealizedPnLCurves.has(t));
       if (chartTargets.length > 0) {
-        const multiplierCharts = chartTargets.map(target => {
-          const unrealizedPnLCurve = sampleData.unrealizedPnLCurves.get(target);
-          const riskLineCurve = sampleData.riskLineCurves?.get(target);
-          const vcCurve = sampleData.vcCurves?.get(target);
-          const pnlCurve = sampleData.pnlCurves?.get(target);
-          const tpMarkers = sampleData.takeProfitMarkers.get(target) || [];
-          const slMarkers = sampleData.stopLossMarkers?.get(target) || [];
-          const obsEndIdx = sampleData.observationEndIndices?.get(target);
-          
-          if (unrealizedPnLCurve && riskLineCurve && vcCurve) {
-            return `<div class="chart-container">${generateVCChartSVG(
-              vcCurve,
-              unrealizedPnLCurve,
-              riskLineCurve,
-              tpMarkers,
-              slMarkers,
-              target,
-              440,
-              250,
-              undefined,
-              obsEndIdx,
-              pnlCurve
-            )}</div>`;
-          }
-          return '';
-        }).filter(Boolean);
-        
+        const multiplierCharts = chartTargets
+          .map((target) => {
+            const unrealizedPnLCurve = sampleData.unrealizedPnLCurves.get(target);
+            const riskLineCurve = sampleData.riskLineCurves?.get(target);
+            const vcCurve = sampleData.vcCurves?.get(target);
+            const pnlCurve = sampleData.pnlCurves?.get(target);
+            const tpMarkers = sampleData.takeProfitMarkers.get(target) || [];
+            const slMarkers = sampleData.stopLossMarkers?.get(target) || [];
+            const obsEndIdx = sampleData.observationEndIndices?.get(target);
+
+            if (unrealizedPnLCurve && riskLineCurve && vcCurve) {
+              return `<div class="chart-container">${generateVCChartSVG(
+                vcCurve,
+                unrealizedPnLCurve,
+                riskLineCurve,
+                tpMarkers,
+                slMarkers,
+                target,
+                440,
+                250,
+                undefined,
+                obsEndIdx,
+                pnlCurve
+              )}</div>`;
+            }
+            return '';
+          })
+          .filter(Boolean);
+
         multiplierChartsHTML = `
           <div class="card">
             <h2>投注账户曲线（样本运行 #1）</h2>
@@ -950,24 +999,26 @@ function generateSignalDetailHTML(
           </div>
         `;
       }
-      
+
       // 净值曲线图（累计盈亏）
-      const equityTargets = [2, 4, 8, 16].filter(t => sampleData.pnlCurves?.has(t));
+      const equityTargets = [2, 4, 8, 16].filter((t) => sampleData.pnlCurves?.has(t));
       if (equityTargets.length > 0) {
-        const equityCharts = equityTargets.map(target => {
-          const curve = sampleData.pnlCurves?.get(target);
-          if (curve) {
-            return `<div class="chart-container">${generateEquityChartSVG(
-              curve,
-              440,
-              200,
-              '累计净值曲线',
-              target
-            )}</div>`;
-          }
-          return '';
-        }).filter(Boolean);
-        
+        const equityCharts = equityTargets
+          .map((target) => {
+            const curve = sampleData.pnlCurves?.get(target);
+            if (curve) {
+              return `<div class="chart-container">${generateEquityChartSVG(
+                curve,
+                440,
+                200,
+                '累计净值曲线',
+                target
+              )}</div>`;
+            }
+            return '';
+          })
+          .filter(Boolean);
+
         if (equityCharts.length > 0) {
           multiplierChartsHTML += `
             <div class="card">
@@ -985,7 +1036,7 @@ function generateSignalDetailHTML(
       }
     }
   }
-  
+
   // 统计表格
   let statsTable = `<table>
     <thead>
@@ -1001,7 +1052,7 @@ function generateSignalDetailHTML(
       </tr>
     </thead>
     <tbody>`;
-  
+
   for (const [target, stats] of signalResult.takeProfitStats) {
     const { intervalStats } = stats;
     statsTable += `<tr>
@@ -1016,7 +1067,7 @@ function generateSignalDetailHTML(
     </tr>`;
   }
   statsTable += '</tbody></table>';
-  
+
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -1073,7 +1124,7 @@ function generateSignalDetailHTML(
       <h2>止盈间隔分布</h2>
       <p style="color: #666; margin-bottom: 20px;">基于 ${result.sampleRuns?.length ?? 0} 次样本运行的分布数据</p>
       <div class="grid grid-2">
-        ${distributionCharts.map(chart => `<div class="chart-container">${chart}</div>`).join('')}
+        ${distributionCharts.map((chart) => `<div class="chart-container">${chart}</div>`).join('')}
       </div>
     </div>
     
@@ -1098,20 +1149,20 @@ function generateSampleLinksHTML(
   if (!result.sampleRuns || result.sampleRuns.length === 0) {
     return '';
   }
-  
+
   // 筛选出有该信号策略样本数据的运行
-  const runsWithData = result.sampleRuns.filter(run => {
+  const runsWithData = result.sampleRuns.filter((run) => {
     const sampleData = run.sampleData?.get(signalType);
     return sampleData && sampleData.trades && sampleData.trades.length > 0;
   });
-  
+
   if (runsWithData.length === 0) {
     return '';
   }
-  
+
   const takeProfitTargets = result.config.betting.takeProfitTargets;
   const totalRuns = result.monteCarloRuns;
-  
+
   // 按样本类型排序：best -> median -> worst
   const typeOrder: Record<string, number> = { best: 0, median: 1, worst: 2 };
   const sortedRuns = [...runsWithData].sort((a, b) => {
@@ -1119,29 +1170,29 @@ function generateSampleLinksHTML(
     const typeB = b.sampleMetadata?.get(signalType)?.sampleType ?? 'median';
     return typeOrder[typeA] - typeOrder[typeB];
   });
-  
+
   // 为每个样本运行生成一个卡片
-  const runCards = sortedRuns.map((run) => {
-    const meta = run.sampleMetadata?.get(signalType);
-    const originalRunIndex = meta?.runIndex ?? run.runIndex;
-    const sampleType = meta?.sampleType ?? 'median';
-    const baselinePnL = meta?.baselinePnL ?? 0;
-    
-    const typeLabel = sampleType === 'best' ? '最佳' 
-                    : sampleType === 'worst' ? '最差' 
-                    : '中位';
-    const typeColor = sampleType === 'best' ? '#27ae60'
-                    : sampleType === 'worst' ? '#e74c3c'
-                    : '#3498db';
-    const pnlStr = (baselinePnL * 100).toFixed(2);
-    const pnlColor = baselinePnL >= 0 ? '#27ae60' : '#e74c3c';
-    
-    const mtLinks = takeProfitTargets.map(mt => {
-      const sampleFilename = `sample_${sanitizeFilename(marketName)}_${sanitizeFilename(signalType)}_run${originalRunIndex + 1}_mt${mt}.html`;
-      return `<a href="${sampleFilename}" class="mt-link">M_T=${mt}</a>`;
-    }).join('');
-    
-    return `
+  const runCards = sortedRuns
+    .map((run) => {
+      const meta = run.sampleMetadata?.get(signalType);
+      const originalRunIndex = meta?.runIndex ?? run.runIndex;
+      const sampleType = meta?.sampleType ?? 'median';
+      const baselinePnL = meta?.baselinePnL ?? 0;
+
+      const typeLabel = sampleType === 'best' ? '最佳' : sampleType === 'worst' ? '最差' : '中位';
+      const typeColor =
+        sampleType === 'best' ? '#27ae60' : sampleType === 'worst' ? '#e74c3c' : '#3498db';
+      const pnlStr = (baselinePnL * 100).toFixed(2);
+      const pnlColor = baselinePnL >= 0 ? '#27ae60' : '#e74c3c';
+
+      const mtLinks = takeProfitTargets
+        .map((mt) => {
+          const sampleFilename = `sample_${sanitizeFilename(marketName)}_${sanitizeFilename(signalType)}_run${originalRunIndex + 1}_mt${mt}.html`;
+          return `<a href="${sampleFilename}" class="mt-link">M_T=${mt}</a>`;
+        })
+        .join('');
+
+      return `
       <div class="sample-run-card" style="border-left: 4px solid ${typeColor};">
         <h4>
           <span class="sample-type-badge" style="background: ${typeColor};">${typeLabel}</span>
@@ -1152,8 +1203,9 @@ function generateSampleLinksHTML(
         </div>
       </div>
     `;
-  }).join('');
-  
+    })
+    .join('');
+
   return `
     <div class="card">
       <h2>样本详情报告</h2>
@@ -1208,11 +1260,11 @@ function generateSampleLinksHTML(
 // 中层报告 - 市场条件下的策略对比
 // ============================================
 
-function generateMarketReportHTML(result: ExperimentResult, baseDir: string): string {
+function generateMarketReportHTML(result: ExperimentResult, _baseDir: string): string {
   const { config } = result;
-  
+
   const heatmap = generateHeatmapSVG(result);
-  
+
   // 策略对比表
   let comparisonTable = `<table>
     <thead>
@@ -1229,7 +1281,7 @@ function generateMarketReportHTML(result: ExperimentResult, baseDir: string): st
       </tr>
     </thead>
     <tbody>`;
-  
+
   for (const signal of result.signalResults) {
     const filename = `signal_${sanitizeFilename(config.name)}_${sanitizeFilename(signal.signalType)}.html`;
     comparisonTable += `<tr>
@@ -1245,7 +1297,7 @@ function generateMarketReportHTML(result: ExperimentResult, baseDir: string): st
     </tr>`;
   }
   comparisonTable += '</tbody></table>';
-  
+
   // 找出最佳策略
   const bestByTarget = new Map<number, { signal: string; interval: number }>();
   for (const target of config.betting.takeProfitTargets.slice(0, 5)) {
@@ -1258,7 +1310,7 @@ function generateMarketReportHTML(result: ExperimentResult, baseDir: string): st
     }
     if (best.signal) bestByTarget.set(target, best);
   }
-  
+
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -1303,12 +1355,16 @@ function generateMarketReportHTML(result: ExperimentResult, baseDir: string): st
     <div class="card">
       <h2>最佳策略推荐</h2>
       <div class="grid grid-3">
-        ${Array.from(bestByTarget.entries()).map(([target, best]) => `
+        ${Array.from(bestByTarget.entries())
+          .map(
+            ([target, best]) => `
           <div class="metric-card">
             <div class="value" style="font-size: 20px;">${best.signal}</div>
             <div class="label">M_T=${target}x 最短间隔: ${formatNumber(best.interval)}</div>
           </div>
-        `).join('')}
+        `
+          )
+          .join('')}
       </div>
     </div>
     
@@ -1326,15 +1382,17 @@ function generateMarketReportHTML(result: ExperimentResult, baseDir: string): st
     <div class="card">
       <h2>各策略详细报告</h2>
       <div class="grid grid-2">
-        ${result.signalResults.map(signal => {
-          const filename = `signal_${sanitizeFilename(config.name)}_${sanitizeFilename(signal.signalType)}.html`;
-          return `
+        ${result.signalResults
+          .map((signal) => {
+            const filename = `signal_${sanitizeFilename(config.name)}_${sanitizeFilename(signal.signalType)}.html`;
+            return `
             <a href="${filename}" class="link-card">
               <h4>${signal.signalType}</h4>
               <p>胜率 ${(signal.avgWinRate * 100).toFixed(1)}% | M_T=2 间隔 ${formatNumber(signal.takeProfitStats.get(2)?.intervalStats.mean ?? null)}</p>
             </a>
           `;
-        }).join('')}
+          })
+          .join('')}
       </div>
     </div>
     
@@ -1356,17 +1414,18 @@ export interface ReportSuite {
 }
 
 function generateIndexHTML(suite: ReportSuite): string {
-  const { results, outputDir } = suite;
-  
+  const { results } = suite;
+
   // 汇总统计
   const totalRuns = results.reduce((sum, r) => sum + r.monteCarloRuns, 0);
-  const totalSignals = new Set(results.flatMap(r => r.signalResults.map(s => s.signalType))).size;
+  const totalSignals = new Set(results.flatMap((r) => r.signalResults.map((s) => s.signalType)))
+    .size;
   const totalMarkets = results.length;
-  
+
   // 全局最佳策略
   const globalBest = new Map<number, { market: string; signal: string; interval: number }>();
   const targets = [2, 4, 8, 16, 32];
-  
+
   for (const target of targets) {
     let best = { market: '', signal: '', interval: Infinity };
     for (const result of results) {
@@ -1379,17 +1438,18 @@ function generateIndexHTML(suite: ReportSuite): string {
     }
     if (best.market) globalBest.set(target, best);
   }
-  
+
   // 市场条件列表
-  const marketCards = results.map(result => {
-    const filename = `market_${sanitizeFilename(result.config.name)}.html`;
-    const bestSignal = result.signalResults.reduce((best, curr) => {
-      const bestInt = best.takeProfitStats.get(2)?.intervalStats.mean ?? Infinity;
-      const currInt = curr.takeProfitStats.get(2)?.intervalStats.mean ?? Infinity;
-      return currInt < bestInt ? curr : best;
-    });
-    
-    return `
+  const marketCards = results
+    .map((result) => {
+      const filename = `market_${sanitizeFilename(result.config.name)}.html`;
+      const bestSignal = result.signalResults.reduce((best, curr) => {
+        const bestInt = best.takeProfitStats.get(2)?.intervalStats.mean ?? Infinity;
+        const currInt = curr.takeProfitStats.get(2)?.intervalStats.mean ?? Infinity;
+        return currInt < bestInt ? curr : best;
+      });
+
+      return `
       <a href="${filename}" class="link-card">
         <h4>${result.config.name}</h4>
         <p>σ=${(result.config.market.volatility * 100).toFixed(1)}% | μ=${((result.config.market.drift ?? 0) * 100).toFixed(1)}%</p>
@@ -1398,8 +1458,9 @@ function generateIndexHTML(suite: ReportSuite): string {
         </p>
       </a>
     `;
-  }).join('');
-  
+    })
+    .join('');
+
   // 综合矩阵表格
   let matrixTable = `<table>
     <thead>
@@ -1407,25 +1468,27 @@ function generateIndexHTML(suite: ReportSuite): string {
         <th>市场条件</th>
         <th>波动率</th>
         <th>漂移率</th>
-        ${results[0]?.signalResults.map(s => `<th>${s.signalType}<br/><small>M_T=2 间隔</small></th>`).join('') ?? ''}
+        ${results[0]?.signalResults.map((s) => `<th>${s.signalType}<br/><small>M_T=2 间隔</small></th>`).join('') ?? ''}
       </tr>
     </thead>
     <tbody>`;
-  
+
   for (const result of results) {
     const filename = `market_${sanitizeFilename(result.config.name)}.html`;
     matrixTable += `<tr>
       <td><a href="${filename}">${result.config.name}</a></td>
       <td>${(result.config.market.volatility * 100).toFixed(1)}%</td>
       <td>${((result.config.market.drift ?? 0) * 100).toFixed(1)}%</td>
-      ${result.signalResults.map(s => {
-        const interval = s.takeProfitStats.get(2)?.intervalStats.mean;
-        return `<td>${formatNumber(interval ?? null)}</td>`;
-      }).join('')}
+      ${result.signalResults
+        .map((s) => {
+          const interval = s.takeProfitStats.get(2)?.intervalStats.mean;
+          return `<td>${formatNumber(interval ?? null)}</td>`;
+        })
+        .join('')}
     </tr>`;
   }
   matrixTable += '</tbody></table>';
-  
+
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -1479,13 +1542,17 @@ function generateIndexHTML(suite: ReportSuite): string {
       <h2>全局最佳策略</h2>
       <p style="color: #666; margin-bottom: 20px;">在所有市场条件下，达到各止盈目标最快的策略</p>
       <div class="grid grid-3">
-        ${Array.from(globalBest.entries()).map(([target, best]) => `
+        ${Array.from(globalBest.entries())
+          .map(
+            ([target, best]) => `
           <div class="metric-card">
             <div class="value" style="font-size: 18px; color: #27ae60;">${best.signal}</div>
             <div class="label">M_T=${target}x 最佳 | ${best.market}</div>
             <div class="label">间隔: ${formatNumber(best.interval)} K线</div>
           </div>
-        `).join('')}
+        `
+          )
+          .join('')}
       </div>
     </div>
     
@@ -1530,52 +1597,57 @@ function generateIndexHTML(suite: ReportSuite): string {
 
 export async function saveReportSuite(suite: ReportSuite): Promise<string> {
   const { results, outputDir } = suite;
-  
+
   // 确保目录存在
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
-  
+
   // 1. 生成并保存总结报告
   const indexPath = path.join(outputDir, 'index.html');
   fs.writeFileSync(indexPath, generateIndexHTML(suite), 'utf-8');
   console.log(`已生成: ${indexPath}`);
-  
+
   // 2. 为每个实验结果生成市场报告和策略详细报告
   for (const result of results) {
     const marketFilename = `market_${sanitizeFilename(result.config.name)}.html`;
     const marketPath = path.join(outputDir, marketFilename);
     fs.writeFileSync(marketPath, generateMarketReportHTML(result, outputDir), 'utf-8');
     console.log(`已生成: ${marketPath}`);
-    
+
     // 3. 为每个信号策略生成详细报告
     for (const signalResult of result.signalResults) {
       const signalFilename = `signal_${sanitizeFilename(result.config.name)}_${sanitizeFilename(signalResult.signalType)}.html`;
       const signalPath = path.join(outputDir, signalFilename);
-      fs.writeFileSync(signalPath, generateSignalDetailHTML(result, signalResult, outputDir), 'utf-8');
+      fs.writeFileSync(
+        signalPath,
+        generateSignalDetailHTML(result, signalResult, outputDir),
+        'utf-8'
+      );
       console.log(`已生成: ${signalPath}`);
-      
+
       // 4. 生成样本详情页面（为代表性样本生成，每个 M_T 一个文件）
       if (result.sampleRuns && result.sampleRuns.length > 0) {
         const takeProfitTargets = result.config.betting.takeProfitTargets;
-        
+
         // 筛选出有该信号策略样本数据的运行
-        const runsWithData = result.sampleRuns.filter(run => {
+        const runsWithData = result.sampleRuns.filter((run) => {
           const sampleData = run.sampleData?.get(signalResult.signalType);
           return sampleData && sampleData.trades && sampleData.trades.length > 0;
         });
-        
+
         for (const run of runsWithData) {
-          const sampleData = run.sampleData?.get(signalResult.signalType)!;
+          const sampleData = run.sampleData?.get(signalResult.signalType);
+          if (!sampleData) continue;
           const meta = run.sampleMetadata?.get(signalResult.signalType);
           const originalRunIndex = meta?.runIndex ?? run.runIndex;
           const sampleType = meta?.sampleType ?? 'median';
-          
+
           // 为每个 M_T 生成独立文件
           for (const targetMT of takeProfitTargets) {
             const sampleFilename = `sample_${sanitizeFilename(result.config.name)}_${sanitizeFilename(signalResult.signalType)}_run${originalRunIndex + 1}_mt${targetMT}.html`;
             const samplePath = path.join(outputDir, sampleFilename);
-            
+
             const sampleHTML = generateSampleDetailHTML(
               sampleData,
               signalResult.signalType,
@@ -1589,22 +1661,25 @@ export async function saveReportSuite(suite: ReportSuite): Promise<string> {
               outputDir,
               targetMT
             );
-            
+
             fs.writeFileSync(samplePath, sampleHTML, 'utf-8');
           }
-          
-          const typeLabel = sampleType === 'best' ? '最佳' : sampleType === 'worst' ? '最差' : '中位';
-          console.log(`已生成: sample_...run${originalRunIndex + 1}_mt*.html (${typeLabel}, ${takeProfitTargets.length} 个 M_T 文件)`);
+
+          const typeLabel =
+            sampleType === 'best' ? '最佳' : sampleType === 'worst' ? '最差' : '中位';
+          console.log(
+            `已生成: sample_...run${originalRunIndex + 1}_mt*.html (${typeLabel}, ${takeProfitTargets.length} 个 M_T 文件)`
+          );
         }
       }
     }
-    
+
     // 5. 保存 JSON 数据
     const { exportToJSON } = await import('../analysis/index.js');
     const jsonPath = path.join(outputDir, `${sanitizeFilename(result.config.name)}_data.json`);
     fs.writeFileSync(jsonPath, exportToJSON(result), 'utf-8');
   }
-  
+
   return indexPath;
 }
 
@@ -1616,10 +1691,7 @@ export function generateHTMLReport(result: ExperimentResult): string {
   return generateMarketReportHTML(result, '');
 }
 
-export async function saveReport(
-  result: ExperimentResult,
-  outputDir: string
-): Promise<void> {
+export async function saveReport(result: ExperimentResult, outputDir: string): Promise<void> {
   const suite: ReportSuite = {
     results: [result],
     outputDir,
@@ -1642,11 +1714,9 @@ export async function saveComparisonReport(
 // 样本级别详细报告
 // ============================================
 
-import type { TradeRecord, BaselineSnapshot, AccountSnapshot } from '../types.js';
-
 /**
  * 生成样本级别详细报告 HTML
- * 
+ *
  * 用于审查交易系统的正确性，包含：
  * 1. 运行概览卡片
  * 2. 价格与信号图（标记开平仓点）
@@ -1666,7 +1736,7 @@ export function generateSampleDetailHTML(
     drift?: number;
     candleCount: number;
   },
-  baseDir: string = '',
+  _baseDir: string = '',
   targetMT: number = 2
 ): string {
   const {
@@ -1685,36 +1755,42 @@ export function generateSampleDetailHTML(
     pnlCurves,
     unrealizedPnLCurves,
   } = sampleData;
-  
+
   // ============================================
   // 1. 运行概览
   // ============================================
   const totalTrades = trades?.length ?? 0;
-  const winTrades = trades?.filter(t => t.isWin).length ?? 0;
-  const winRate = totalTrades > 0 ? (winTrades / totalTrades * 100).toFixed(1) : 'N/A';
-  const avgHoldingPeriod = totalTrades > 0 
-    ? (trades!.reduce((sum, t) => sum + t.holdingPeriod, 0) / totalTrades).toFixed(1) 
-    : 'N/A';
+  const winTrades = trades?.filter((t) => t.isWin).length ?? 0;
+  const winRate = totalTrades > 0 ? ((winTrades / totalTrades) * 100).toFixed(1) : 'N/A';
+  const avgHoldingPeriod =
+    totalTrades > 0
+      ? (trades!.reduce((sum, t) => sum + t.holdingPeriod, 0) / totalTrades).toFixed(1)
+      : 'N/A';
   const totalPnl = trades?.reduce((sum, t) => sum + t.pnlPercent, 0) ?? 0;
   const finalBaselineEquity = baselineEquityCurve?.[baselineEquityCurve.length - 1] ?? 0;
   const finalLearnedC = baselineSnapshots?.[baselineSnapshots.length - 1]?.estimatedC ?? 0;
-  
+
   // 反马丁账户指标（针对当前 M_T）
   const accountSnapshotsForTarget = accountSnapshots?.get(targetMT) ?? [];
   const finalSnapshot = accountSnapshotsForTarget[accountSnapshotsForTarget.length - 1];
   const finalAntiMartingalePnL = finalSnapshot?.pnl ?? 0;
   const finalRealizedPnL = finalSnapshot?.realizedPnL ?? 0;
-  const takeProfitCount = accountSnapshotsForTarget.filter(s => s.eventType === 'take_profit').length;
-  const stopLossCount = accountSnapshotsForTarget.filter(s => s.eventType === 'stop_loss').length;
-  const nonObservingSnapshots = accountSnapshotsForTarget.filter(s => !s.isObserving);
-  const maxPosition = nonObservingSnapshots.length > 0 
-    ? Math.max(...nonObservingSnapshots.map(s => s.positionSize))
-    : 0;
-  const avgPosition = nonObservingSnapshots.length > 0
-    ? nonObservingSnapshots.reduce((sum, s) => sum + s.positionSize, 0) / nonObservingSnapshots.length
-    : 0;
+  const takeProfitCount = accountSnapshotsForTarget.filter(
+    (s) => s.eventType === 'take_profit'
+  ).length;
+  const stopLossCount = accountSnapshotsForTarget.filter((s) => s.eventType === 'stop_loss').length;
+  const nonObservingSnapshots = accountSnapshotsForTarget.filter((s) => !s.isObserving);
+  const maxPosition =
+    nonObservingSnapshots.length > 0
+      ? Math.max(...nonObservingSnapshots.map((s) => s.positionSize))
+      : 0;
+  const avgPosition =
+    nonObservingSnapshots.length > 0
+      ? nonObservingSnapshots.reduce((sum, s) => sum + s.positionSize, 0) /
+        nonObservingSnapshots.length
+      : 0;
   const finalStopLoss = finalSnapshot?.stopLoss ?? 0;
-  
+
   // ============================================
   // 2. 价格与信号图（带开平仓标记）
   // ============================================
@@ -1725,14 +1801,14 @@ export function generateSampleDetailHTML(
     900,
     280
   );
-  
+
   // ============================================
   // 3. 基准净值曲线图
   // ============================================
-  const baselineEquityChartSVG = baselineEquityCurve 
-    ? generateEquityChartSVG(baselineEquityCurve, 900, 200, '基准账户净值曲线 (仓位=1)') 
+  const baselineEquityChartSVG = baselineEquityCurve
+    ? generateEquityChartSVG(baselineEquityCurve, 900, 200, '基准账户净值曲线 (仓位=1)')
     : '';
-  
+
   // ============================================
   // 4. 投注账户曲线图（使用指定的 M_T）
   // ============================================
@@ -1743,43 +1819,44 @@ export function generateSampleDetailHTML(
   const tpMarkers = takeProfitMarkers?.get(targetMT) ?? [];
   const slMarkers = stopLossMarkers?.get(targetMT) ?? [];
   const obsEndIdx = observationEndIndices?.get(targetMT) ?? 0;
-  
-  const multiplierChartSVG = (unrealizedPnLCurve && vcCurve && riskCurve)
-    ? generateVCChartSVG(
-        vcCurve,
-        unrealizedPnLCurve,
-        riskCurve,
-        tpMarkers,
-        slMarkers,
-        targetMT,
-        900,
-        280,
-        `投注账户曲线 M_T=${targetMT}`,
-        obsEndIdx,
-        pnlCurve
-      )
-    : '';
-  
+
+  const multiplierChartSVG =
+    unrealizedPnLCurve && vcCurve && riskCurve
+      ? generateVCChartSVG(
+          vcCurve,
+          unrealizedPnLCurve,
+          riskCurve,
+          tpMarkers,
+          slMarkers,
+          targetMT,
+          900,
+          280,
+          `投注账户曲线 M_T=${targetMT}`,
+          obsEndIdx,
+          pnlCurve
+        )
+      : '';
+
   // ============================================
   // 5. 交易记录表
   // ============================================
   const tradesTable = generateTradesTable(trades ?? []);
-  
+
   // ============================================
   // 6. 基准账户快照表
   // ============================================
   const baselineTable = generateBaselineTable(baselineSnapshots ?? []);
-  
+
   // ============================================
   // 7. 账户状态变化表（使用指定的 M_T）
   // ============================================
   const accountTable = generateAccountSnapshotsTable(accountSnapshotsForTarget, targetMT);
-  
+
   // ============================================
   // 8. K线数据表（前100条，支持CSV下载）
   // ============================================
   const candleDataTable = generateCandleDataTable(candles ?? [], signals ?? [], trades ?? []);
-  
+
   // ============================================
   // 生成 HTML
   // ============================================
@@ -1949,7 +2026,9 @@ export function generateSampleDetailHTML(
     </div>
     
     <!-- 基准净值曲线 -->
-    ${baselineEquityChartSVG ? `
+    ${
+      baselineEquityChartSVG
+        ? `
     <div class="card">
       <h2>基准账户净值曲线</h2>
       <p style="color: #666; margin-bottom: 15px;">
@@ -1959,10 +2038,14 @@ export function generateSampleDetailHTML(
         ${baselineEquityChartSVG}
       </div>
     </div>
-    ` : ''}
+    `
+        : ''
+    }
     
     <!-- 反马丁资金曲线 -->
-    ${multiplierChartSVG ? `
+    ${
+      multiplierChartSVG
+        ? `
     <div class="card">
       <h2>反马丁账户资金曲线</h2>
       <p style="color: #666; margin-bottom: 15px;">
@@ -1973,7 +2056,9 @@ export function generateSampleDetailHTML(
         ${multiplierChartSVG}
       </div>
     </div>
-    ` : ''}
+    `
+        : ''
+    }
     
     <!-- 交易记录表 -->
     <div class="card">
@@ -1987,7 +2072,9 @@ export function generateSampleDetailHTML(
     </div>
     
     <!-- 基准账户快照表 -->
-    ${baselineSnapshots && baselineSnapshots.length > 0 ? `
+    ${
+      baselineSnapshots && baselineSnapshots.length > 0
+        ? `
     <div class="card">
       <h2>基准账户快照 (${baselineSnapshots.length} 条)</h2>
       <p style="color: #666; margin-bottom: 10px;">
@@ -1997,10 +2084,14 @@ export function generateSampleDetailHTML(
         ${baselineTable}
       </div>
     </div>
-    ` : ''}
+    `
+        : ''
+    }
     
     <!-- 账户状态变化表 -->
-    ${accountSnapshotsForTarget.length > 0 ? `
+    ${
+      accountSnapshotsForTarget.length > 0
+        ? `
     <div class="card">
       <h2>反马丁账户快照 M_T=${targetMT}x (${accountSnapshotsForTarget.length} 条)</h2>
       <p style="color: #666; margin-bottom: 10px;">
@@ -2010,7 +2101,9 @@ export function generateSampleDetailHTML(
         ${accountTable}
       </div>
     </div>
-    ` : ''}
+    `
+        : ''
+    }
     
     <!-- K线数据表 -->
     <div class="card">
@@ -2054,22 +2147,22 @@ function generatePriceSignalChartSVG(
 ): string {
   if (prices.length === 0) {
     return `<svg width="${width}" height="80">
-      <text x="${width/2}" y="40" text-anchor="middle" fill="#999" font-size="14">无价格数据</text>
+      <text x="${width / 2}" y="40" text-anchor="middle" fill="#999" font-size="14">无价格数据</text>
     </svg>`;
   }
 
   const padding = { top: 30, right: 40, bottom: 50, left: 60 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  
+
   // 降采样
   const sampleRate = Math.max(1, Math.floor(prices.length / 800));
   const sampledPrices = prices.filter((_, i) => i % sampleRate === 0);
-  
+
   const minPrice = Math.min(...sampledPrices);
   const maxPrice = Math.max(...sampledPrices);
   const priceRange = maxPrice - minPrice || 1;
-  
+
   // 生成价格路径
   const pricePoints = sampledPrices.map((price, i) => {
     const x = padding.left + (i / (sampledPrices.length - 1)) * chartWidth;
@@ -2077,47 +2170,53 @@ function generatePriceSignalChartSVG(
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   });
   const pricePathD = `M ${pricePoints.join(' L ')}`;
-  
+
   // 生成交易标记
-  const tradeMarkers = trades.map(trade => {
-    // 开仓标记
-    const entryIdx = Math.floor(trade.entryIndex / sampleRate);
-    const entryX = padding.left + (entryIdx / (sampledPrices.length - 1)) * chartWidth;
-    const entryY = padding.top + chartHeight - ((trade.entryPrice - minPrice) / priceRange) * chartHeight;
-    
-    // 平仓标记
-    const exitIdx = Math.floor(trade.exitIndex / sampleRate);
-    const exitX = padding.left + (exitIdx / (sampledPrices.length - 1)) * chartWidth;
-    const exitY = padding.top + chartHeight - ((trade.exitPrice - minPrice) / priceRange) * chartHeight;
-    
-    const isLong = trade.direction === 1;
-    const arrowColor = isLong ? '#27ae60' : '#e74c3c';
-    
-    // 开仓箭头
-    const arrowPath = isLong 
-      ? `M ${entryX} ${entryY + 15} L ${entryX} ${entryY} L ${entryX - 5} ${entryY + 8} M ${entryX} ${entryY} L ${entryX + 5} ${entryY + 8}`
-      : `M ${entryX} ${entryY - 15} L ${entryX} ${entryY} L ${entryX - 5} ${entryY - 8} M ${entryX} ${entryY} L ${entryX + 5} ${entryY - 8}`;
-    
-    // 平仓叉号
-    const crossSize = 4;
-    const crossPath = `M ${exitX - crossSize} ${exitY - crossSize} L ${exitX + crossSize} ${exitY + crossSize} M ${exitX - crossSize} ${exitY + crossSize} L ${exitX + crossSize} ${exitY - crossSize}`;
-    
-    return `
+  const tradeMarkers = trades
+    .map((trade) => {
+      // 开仓标记
+      const entryIdx = Math.floor(trade.entryIndex / sampleRate);
+      const entryX = padding.left + (entryIdx / (sampledPrices.length - 1)) * chartWidth;
+      const entryY =
+        padding.top + chartHeight - ((trade.entryPrice - minPrice) / priceRange) * chartHeight;
+
+      // 平仓标记
+      const exitIdx = Math.floor(trade.exitIndex / sampleRate);
+      const exitX = padding.left + (exitIdx / (sampledPrices.length - 1)) * chartWidth;
+      const exitY =
+        padding.top + chartHeight - ((trade.exitPrice - minPrice) / priceRange) * chartHeight;
+
+      const isLong = trade.direction === 1;
+      const arrowColor = isLong ? '#27ae60' : '#e74c3c';
+
+      // 开仓箭头
+      const arrowPath = isLong
+        ? `M ${entryX} ${entryY + 15} L ${entryX} ${entryY} L ${entryX - 5} ${entryY + 8} M ${entryX} ${entryY} L ${entryX + 5} ${entryY + 8}`
+        : `M ${entryX} ${entryY - 15} L ${entryX} ${entryY} L ${entryX - 5} ${entryY - 8} M ${entryX} ${entryY} L ${entryX + 5} ${entryY - 8}`;
+
+      // 平仓叉号
+      const crossSize = 4;
+      const crossPath = `M ${exitX - crossSize} ${exitY - crossSize} L ${exitX + crossSize} ${exitY + crossSize} M ${exitX - crossSize} ${exitY + crossSize} L ${exitX + crossSize} ${exitY - crossSize}`;
+
+      return `
       <path d="${arrowPath}" stroke="${arrowColor}" stroke-width="2" fill="none"/>
       <path d="${crossPath}" stroke="#888" stroke-width="2"/>
     `;
-  }).join('');
-  
+    })
+    .join('');
+
   // Y轴刻度
-  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(p => {
-    const price = minPrice + p * priceRange;
-    const y = padding.top + chartHeight - p * chartHeight;
-    return `
+  const yTicks = [0, 0.25, 0.5, 0.75, 1]
+    .map((p) => {
+      const price = minPrice + p * priceRange;
+      const y = padding.top + chartHeight - p * chartHeight;
+      return `
       <line x1="${padding.left - 5}" y1="${y}" x2="${padding.left}" y2="${y}" stroke="#ccc" stroke-width="1"/>
       <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" font-size="10" fill="#666">${price.toFixed(2)}</text>
     `;
-  }).join('');
-  
+    })
+    .join('');
+
   return `
 <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
   <style>text { font-family: -apple-system, sans-serif; }</style>
@@ -2172,17 +2271,20 @@ function generateTradesTable(trades: TradeRecord[]): string {
   if (trades.length === 0) {
     return '<p style="color: #999; text-align: center;">无交易记录</p>';
   }
-  
-  const rows = trades.map(t => {
-    const rowClass = t.isWin ? 'trade-win' : 'trade-loss';
-    const directionText = t.direction === 1 
-      ? '<span class="signal-long">多</span>' 
-      : '<span class="signal-short">空</span>';
-    const pnlText = t.pnlPercent >= 0 
-      ? `<span style="color: #27ae60;">+${(t.pnlPercent * 100).toFixed(3)}%</span>`
-      : `<span style="color: #e74c3c;">${(t.pnlPercent * 100).toFixed(3)}%</span>`;
-    
-    return `<tr class="${rowClass}">
+
+  const rows = trades
+    .map((t) => {
+      const rowClass = t.isWin ? 'trade-win' : 'trade-loss';
+      const directionText =
+        t.direction === 1
+          ? '<span class="signal-long">多</span>'
+          : '<span class="signal-short">空</span>';
+      const pnlText =
+        t.pnlPercent >= 0
+          ? `<span style="color: #27ae60;">+${(t.pnlPercent * 100).toFixed(3)}%</span>`
+          : `<span style="color: #e74c3c;">${(t.pnlPercent * 100).toFixed(3)}%</span>`;
+
+      return `<tr class="${rowClass}">
       <td>${t.tradeIndex}</td>
       <td>${directionText}</td>
       <td>${t.signalIndex}</td>
@@ -2195,8 +2297,9 @@ function generateTradesTable(trades: TradeRecord[]): string {
       <td>${pnlText}</td>
       <td>${(t.maxDrawdown * 100).toFixed(3)}%</td>
     </tr>`;
-  }).join('');
-  
+    })
+    .join('');
+
   return `<table>
     <thead>
       <tr>
@@ -2224,16 +2327,19 @@ function generateBaselineTable(snapshots: BaselineSnapshot[]): string {
   if (snapshots.length === 0) {
     return '<p style="color: #999; text-align: center;">无基准账户快照</p>';
   }
-  
-  const rows = snapshots.map(s => {
-    const pnlText = s.pnlPercent >= 0 
-      ? `<span style="color: #27ae60;">+${(s.pnlPercent * 100).toFixed(3)}%</span>`
-      : `<span style="color: #e74c3c;">${(s.pnlPercent * 100).toFixed(3)}%</span>`;
-    const equityText = s.cumulativeEquity >= 0
-      ? `<span style="color: #27ae60;">${(s.cumulativeEquity * 100).toFixed(3)}%</span>`
-      : `<span style="color: #e74c3c;">${(s.cumulativeEquity * 100).toFixed(3)}%</span>`;
-    
-    return `<tr>
+
+  const rows = snapshots
+    .map((s) => {
+      const pnlText =
+        s.pnlPercent >= 0
+          ? `<span style="color: #27ae60;">+${(s.pnlPercent * 100).toFixed(3)}%</span>`
+          : `<span style="color: #e74c3c;">${(s.pnlPercent * 100).toFixed(3)}%</span>`;
+      const equityText =
+        s.cumulativeEquity >= 0
+          ? `<span style="color: #27ae60;">${(s.cumulativeEquity * 100).toFixed(3)}%</span>`
+          : `<span style="color: #e74c3c;">${(s.cumulativeEquity * 100).toFixed(3)}%</span>`;
+
+      return `<tr>
       <td>${s.tradeIndex}</td>
       <td>${s.candleIndex}</td>
       <td>${pnlText}</td>
@@ -2242,8 +2348,9 @@ function generateBaselineTable(snapshots: BaselineSnapshot[]): string {
       <td>${(s.maxDrawdown * 100).toFixed(3)}%</td>
       <td>${(s.stopLoss * 100).toFixed(3)}%</td>
     </tr>`;
-  }).join('');
-  
+    })
+    .join('');
+
   return `<table>
     <thead>
       <tr>
@@ -2263,11 +2370,14 @@ function generateBaselineTable(snapshots: BaselineSnapshot[]): string {
 /**
  * 生成账户状态快照表格
  */
-function generateAccountSnapshotsTable(snapshots: AccountSnapshot[], targetMultiplier: number): string {
+function generateAccountSnapshotsTable(
+  snapshots: AccountSnapshot[],
+  _targetMultiplier: number
+): string {
   if (snapshots.length === 0) {
     return '<p style="color: #999; text-align: center;">无账户快照</p>';
   }
-  
+
   // 格式化百分比数值，带颜色
   const formatPnl = (value: number, isObserving = false): string => {
     if (value === 0 && isObserving) {
@@ -2278,30 +2388,32 @@ function generateAccountSnapshotsTable(snapshots: AccountSnapshot[], targetMulti
     return `<span style="color: ${color};">${sign}${(value * 100).toFixed(3)}%</span>`;
   };
 
-  const rows = snapshots.map(s => {
-    let rowClass = '';
-    let eventText = '';
-    
-    switch (s.eventType) {
-      case 'observing':
-        rowClass = 'observing';
-        eventText = '<span class="event-obs">观察期</span>';
-        break;
-      case 'take_profit':
-        eventText = '<span class="event-tp">止盈</span>';
-        break;
-      case 'stop_loss':
-        eventText = '<span class="event-sl">止损</span>';
-        break;
-      default:
-        eventText = '交易';
-    }
-    
-    const vcText = s.ventureCapital >= 0
-      ? `<span style="color: #27ae60;">${s.ventureCapital.toFixed(4)}</span>`
-      : `<span style="color: #e74c3c;">${s.ventureCapital.toFixed(4)}</span>`;
-    
-    return `<tr class="${rowClass}">
+  const rows = snapshots
+    .map((s) => {
+      let rowClass = '';
+      let eventText = '';
+
+      switch (s.eventType) {
+        case 'observing':
+          rowClass = 'observing';
+          eventText = '<span class="event-obs">观察期</span>';
+          break;
+        case 'take_profit':
+          eventText = '<span class="event-tp">止盈</span>';
+          break;
+        case 'stop_loss':
+          eventText = '<span class="event-sl">止损</span>';
+          break;
+        default:
+          eventText = '交易';
+      }
+
+      const vcText =
+        s.ventureCapital >= 0
+          ? `<span style="color: #27ae60;">${s.ventureCapital.toFixed(4)}</span>`
+          : `<span style="color: #e74c3c;">${s.ventureCapital.toFixed(4)}</span>`;
+
+      return `<tr class="${rowClass}">
       <td>${s.tradeIndex}</td>
       <td>${s.candleIndex}</td>
       <td>${eventText}</td>
@@ -2316,8 +2428,9 @@ function generateAccountSnapshotsTable(snapshots: AccountSnapshot[], targetMulti
       <td>${s.estimatedC.toFixed(6)}</td>
       <td>${s.stopLoss.toFixed(4)}</td>
     </tr>`;
-  }).join('');
-  
+    })
+    .join('');
+
   return `<table>
     <thead>
       <tr>
@@ -2351,7 +2464,7 @@ function generateCandleDataTable(
   if (candles.length === 0) {
     return '<p style="color: #999; text-align: center;">无K线数据</p>';
   }
-  
+
   // 创建交易索引映射
   const tradeEntryMap = new Map<number, TradeRecord>();
   const tradeExitMap = new Map<number, TradeRecord>();
@@ -2359,27 +2472,28 @@ function generateCandleDataTable(
     tradeEntryMap.set(t.entryIndex, t);
     tradeExitMap.set(t.exitIndex, t);
   }
-  
+
   // 只显示前100条
   const displayCandles = candles.slice(0, 100);
-  
-  const rows = displayCandles.map((c, i) => {
-    const signal = signals[i] ?? 0;
-    let signalText = '<span class="signal-flat">-</span>';
-    if (signal === 1) signalText = '<span class="signal-long">多</span>';
-    else if (signal === -1) signalText = '<span class="signal-short">空</span>';
-    
-    let action = '-';
-    const entryTrade = tradeEntryMap.get(i);
-    const exitTrade = tradeExitMap.get(i);
-    if (entryTrade) {
-      action = entryTrade.direction === 1 ? '开多' : '开空';
-    }
-    if (exitTrade) {
-      action += (action !== '-' ? ' / ' : '') + '平仓';
-    }
-    
-    return `<tr>
+
+  const rows = displayCandles
+    .map((c, i) => {
+      const signal = signals[i] ?? 0;
+      let signalText = '<span class="signal-flat">-</span>';
+      if (signal === 1) signalText = '<span class="signal-long">多</span>';
+      else if (signal === -1) signalText = '<span class="signal-short">空</span>';
+
+      let action = '-';
+      const entryTrade = tradeEntryMap.get(i);
+      const exitTrade = tradeExitMap.get(i);
+      if (entryTrade) {
+        action = entryTrade.direction === 1 ? '开多' : '开空';
+      }
+      if (exitTrade) {
+        action += `${action !== '-' ? ' / ' : ''}平仓`;
+      }
+
+      return `<tr>
       <td>${i}</td>
       <td>${c.open.toFixed(4)}</td>
       <td>${c.high.toFixed(4)}</td>
@@ -2388,8 +2502,9 @@ function generateCandleDataTable(
       <td>${signalText}</td>
       <td>${action}</td>
     </tr>`;
-  }).join('');
-  
+    })
+    .join('');
+
   return `<table>
     <thead>
       <tr>
@@ -2408,4 +2523,3 @@ function generateCandleDataTable(
     显示前 ${displayCandles.length} / ${candles.length} 条数据
   </p>`;
 }
-

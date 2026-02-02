@@ -1,6 +1,6 @@
 /**
  * 缓存工具函数
- * 
+ *
  * 提供 ID 生成、缓存验证、文件读写等功能
  */
 
@@ -43,7 +43,7 @@ export function parseMarketId(marketId: string): MarketConfig {
   if (!match) {
     throw new Error(`Invalid market ID: ${marketId}`);
   }
-  
+
   const [, type, vol, drift, candleCount, seed] = match;
   return {
     type: type as MarketConfig['type'],
@@ -60,7 +60,7 @@ export function parseMarketId(marketId: string): MarketConfig {
 export function generateSignalId(config: SignalStrategyConfig): string {
   const params = config.params ?? {};
   const paramStr = Object.entries(params)
-    .filter(([k]) => k !== 'seed')  // 排除种子
+    .filter(([k]) => k !== 'seed') // 排除种子
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => `${k}${v}`)
     .join('_');
@@ -109,21 +109,21 @@ export function isRunCacheValid(
 ): boolean {
   if (force) return false;
   if (!fs.existsSync(filePath)) return false;
-  
+
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
     const cached: RunResultFile = JSON.parse(content);
-    
+
     // 检查配置哈希
     if (cached.configHash !== expectedHash) {
       return false;
     }
-    
+
     // 检查引擎版本
     if (cached.version !== ENGINE_VERSION) {
       return false;
     }
-    
+
     return true;
   } catch {
     return false;
@@ -132,7 +132,7 @@ export function isRunCacheValid(
 
 /**
  * 检查聚合结果缓存是否有效
- * 
+ *
  * 聚合结果依赖所有源文件，如果任何源文件更新，聚合结果需要重新计算
  */
 export function isAggregationCacheValid(
@@ -142,11 +142,11 @@ export function isAggregationCacheValid(
 ): boolean {
   if (force) return false;
   if (!fs.existsSync(aggFilePath)) return false;
-  
+
   try {
     const aggStat = fs.statSync(aggFilePath);
     const aggMtime = aggStat.mtimeMs;
-    
+
     // 检查所有源文件的修改时间
     if (fs.existsSync(sourceDir)) {
       const files = fs.readdirSync(sourceDir);
@@ -155,19 +155,19 @@ export function isAggregationCacheValid(
           const filePath = path.join(sourceDir, file);
           const fileStat = fs.statSync(filePath);
           if (fileStat.mtimeMs > aggMtime) {
-            return false;  // 源文件比聚合文件新
+            return false; // 源文件比聚合文件新
           }
         }
       }
     }
-    
+
     // 检查引擎版本
     const content = fs.readFileSync(aggFilePath, 'utf-8');
     const cached: AggregatedResultFile = JSON.parse(content);
     if (cached.version !== ENGINE_VERSION) {
       return false;
     }
-    
+
     return true;
   } catch {
     return false;
@@ -200,7 +200,7 @@ export function writeRunResult(
   result: RunStats
 ): void {
   const configHash = generateConfigHash(config.market, config.signal, config.betting);
-  
+
   const file: RunResultFile = {
     version: ENGINE_VERSION,
     configHash,
@@ -208,7 +208,7 @@ export function writeRunResult(
     config,
     result,
   };
-  
+
   ensureDir(path.dirname(filePath));
   fs.writeFileSync(filePath, JSON.stringify(file, null, 2), 'utf-8');
 }
@@ -224,16 +224,13 @@ export function readRunResult(filePath: string): RunResultFile {
 /**
  * 写入聚合结果文件
  */
-export function writeAggregatedResult(
-  filePath: string,
-  result: AggregatedResult
-): void {
+export function writeAggregatedResult(filePath: string, result: AggregatedResult): void {
   const file: AggregatedResultFile = {
     version: ENGINE_VERSION,
     createdAt: Date.now(),
     result,
   };
-  
+
   ensureDir(path.dirname(filePath));
   fs.writeFileSync(filePath, JSON.stringify(file, null, 2), 'utf-8');
 }
@@ -312,14 +309,14 @@ export function calculateStats(values: number[]): {
       p95: null,
     };
   }
-  
+
   const sorted = [...values].sort((a, b) => a - b);
   const n = sorted.length;
-  
+
   const mean = values.reduce((a, b) => a + b, 0) / n;
   const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / n;
   const std = Math.sqrt(variance);
-  
+
   const percentile = (p: number) => {
     const idx = (p / 100) * (n - 1);
     const lower = Math.floor(idx);
@@ -327,7 +324,7 @@ export function calculateStats(values: number[]): {
     if (lower === upper) return sorted[lower];
     return sorted[lower] * (upper - idx) + sorted[upper] * (idx - lower);
   };
-  
+
   return {
     mean,
     median: percentile(50),

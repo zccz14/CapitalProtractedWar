@@ -1,6 +1,6 @@
 /**
  * 随机策略 (Random)
- * 
+ *
  * 对照组策略，用于验证其他策略是否真的有效：
  * - 以固定概率随机开仓（做多或做空）
  * - 持仓时间服从指数分布
@@ -40,7 +40,7 @@ const DEFAULT_PARAMS: RandomParams = {
 })
 export class RandomStrategy extends BaseStrategy<RandomParams> {
   readonly type: SignalStrategyType = 'random';
-  
+
   private random: SeededRandom;
   private barsHeld: number = 0;
 
@@ -52,7 +52,7 @@ export class RandomStrategy extends BaseStrategy<RandomParams> {
     this.random = createRandom(this.params.seed);
   }
 
-  generate(candles: Candle[], currentIndex: number): Signal {
+  generate(_candles: Candle[], _currentIndex: number): Signal {
     const { tradeProbability, avgHoldingPeriod } = this.params;
 
     // 如果有持仓，考虑平仓

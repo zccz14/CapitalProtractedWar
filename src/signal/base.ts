@@ -1,18 +1,18 @@
 /**
  * 信号策略基类和注册机制
- * 
+ *
  * 提供：
  * 1. BaseStrategy 抽象基类 - 管理通用状态和行为
  * 2. 策略注册器 - 自动发现和注册策略
  * 3. 策略元信息 - 描述策略特性
  */
 
-import type { 
-  Candle, 
-  Signal, 
-  SignalStrategy, 
+import type {
+  Candle,
+  Signal,
+  SignalStrategy,
   SignalStrategyConfig,
-  SignalStrategyType 
+  SignalStrategyType,
 } from '../types.js';
 
 // ============================================
@@ -20,13 +20,13 @@ import type {
 // ============================================
 
 /** 策略分类 */
-export type StrategyCategory = 
-  | 'trend'           // 趋势类
-  | 'mean_reversion'  // 均值回归类
-  | 'breakout'        // 突破类
-  | 'volatility'      // 波动率类
-  | 'composite'       // 组合策略
-  | 'other';          // 其他
+export type StrategyCategory =
+  | 'trend' // 趋势类
+  | 'mean_reversion' // 均值回归类
+  | 'breakout' // 突破类
+  | 'volatility' // 波动率类
+  | 'composite' // 组合策略
+  | 'other'; // 其他
 
 /** 策略元信息 */
 export interface StrategyMeta {
@@ -55,30 +55,30 @@ export interface BaseStrategyParams {
 
 /**
  * 信号策略抽象基类
- * 
+ *
  * 提供通用功能：
  * - 持仓状态管理 (position: -1, 0, 1)
  * - 信号生成框架
  * - 参数验证
  */
-export abstract class BaseStrategy<P extends BaseStrategyParams = BaseStrategyParams> 
-  implements SignalStrategy {
-  
+export abstract class BaseStrategy<
+  P extends BaseStrategyParams = BaseStrategyParams,
+> implements SignalStrategy {
   abstract readonly type: SignalStrategyType;
-  
+
   protected params: P;
   /** 当前持仓: 1=多, 0=空仓, -1=空 */
   protected currentPosition: number = 0;
-  
+
   constructor(params: P) {
     this.params = params;
   }
-  
+
   /**
    * 生成交易信号（子类实现）
    */
   abstract generate(candles: Candle[], currentIndex: number): Signal;
-  
+
   /**
    * 重置策略状态
    */
@@ -86,28 +86,28 @@ export abstract class BaseStrategy<P extends BaseStrategyParams = BaseStrategyPa
     this.currentPosition = 0;
     this.onReset();
   }
-  
+
   /**
    * 子类可重写的重置钩子
    */
   protected onReset(): void {
     // 子类可重写
   }
-  
+
   /**
    * 获取当前持仓
    */
   protected getPosition(): number {
     return this.currentPosition;
   }
-  
+
   /**
    * 设置持仓
    */
   protected setPosition(position: number): void {
     this.currentPosition = position;
   }
-  
+
   /**
    * 辅助方法：生成做多信号
    */
@@ -115,7 +115,7 @@ export abstract class BaseStrategy<P extends BaseStrategyParams = BaseStrategyPa
     this.currentPosition = 1;
     return 1;
   }
-  
+
   /**
    * 辅助方法：生成做空信号
    */
@@ -123,7 +123,7 @@ export abstract class BaseStrategy<P extends BaseStrategyParams = BaseStrategyPa
     this.currentPosition = -1;
     return -1;
   }
-  
+
   /**
    * 辅助方法：生成平仓信号
    */
@@ -131,14 +131,14 @@ export abstract class BaseStrategy<P extends BaseStrategyParams = BaseStrategyPa
     this.currentPosition = 0;
     return 0;
   }
-  
+
   /**
    * 辅助方法：保持当前仓位（不发出新信号）
    */
   protected hold(): Signal {
     return this.currentPosition;
   }
-  
+
   /**
    * 检查是否有足够的历史数据
    */
@@ -168,10 +168,7 @@ const strategyRegistry = new Map<SignalStrategyType, RegisteredStrategy>();
  * @param meta 策略元信息
  * @param constructor 策略构造函数
  */
-export function registerStrategy(
-  meta: StrategyMeta,
-  constructor: StrategyConstructor
-): void {
+export function registerStrategy(meta: StrategyMeta, constructor: StrategyConstructor): void {
   if (strategyRegistry.has(meta.type)) {
     console.warn(`Strategy "${meta.type}" is already registered, overwriting.`);
   }
@@ -182,7 +179,7 @@ export function registerStrategy(
  * 获取已注册的策略列表
  */
 export function getRegisteredStrategies(): StrategyMeta[] {
-  return Array.from(strategyRegistry.values()).map(s => s.meta);
+  return Array.from(strategyRegistry.values()).map((s) => s.meta);
 }
 
 /**
@@ -205,26 +202,26 @@ export function getStrategyMeta(type: SignalStrategyType): StrategyMeta | undefi
  */
 export function createStrategy(config: SignalStrategyConfig): SignalStrategy {
   const registered = strategyRegistry.get(config.type);
-  
+
   if (!registered) {
     throw new Error(
       `Unknown strategy type: "${config.type}". ` +
-      `Available types: ${Array.from(strategyRegistry.keys()).join(', ')}`
+        `Available types: ${Array.from(strategyRegistry.keys()).join(', ')}`
     );
   }
-  
+
   // 合并默认参数和用户参数
   const params = {
     ...registered.meta.defaultParams,
     ...config.params,
   };
-  
+
   return new registered.constructor(params);
 }
 
 /**
  * 策略装饰器 - 用于自动注册策略
- * 
+ *
  * @example
  * ```typescript
  * @Strategy({

@@ -51,9 +51,7 @@ export class ExpNewCommand extends Command {
   });
 
   async execute() {
-    const phases = this.phase 
-      ? this.phase.split(',').map(p => parseInt(p.trim()))
-      : [1, 2, 3, 4];
+    const phases = this.phase ? this.phase.split(',').map((p) => parseInt(p.trim())) : [1, 2, 3, 4];
 
     await runExperiment({
       quick: this.quick,
