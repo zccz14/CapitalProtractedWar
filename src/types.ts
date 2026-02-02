@@ -123,14 +123,15 @@ export const DEFAULT_TAKE_PROFIT_TARGETS = [2, 4, 8, 16, 32, 64, 128, 256, 512, 
 
 /**
  * 投注策略配置
+ * 
+ * 新风控框架：
+ * - Position(t) = StopLoss > 0 ? max(1, floor(VC / StopLoss)) : 0
+ * - VC(t) = PnL(t) - RiskLine(t)
+ * - RiskLine(t+1) = RiskLine(t) - C(t)
  */
 export interface BettingStrategyConfig {
-  /** 止盈线序列 */
+  /** 止盈线序列 M_T */
   takeProfitTargets: number[];
-  /** 盈利后仓位乘数 (默认2, 即翻倍) */
-  winMultiplier?: number;
-  /** 亏损后仓位乘数 (默认0, 即重置到基础仓位) */
-  loseMultiplier?: number;
   /** 交易成本率 (成交额的固定比例, 如 0.0003 = 0.03%) */
   tradingCostRate?: number;
   /** 是否启用风控止损 (默认 true) */
@@ -139,6 +140,8 @@ export interface BettingStrategyConfig {
 
 /**
  * 止盈事件记录
+ * 
+ * 止盈条件：VC(t) >= M_T
  */
 export interface TakeProfitEvent {
   /** 第几轮（从0开始） */
@@ -149,18 +152,17 @@ export interface TakeProfitEvent {
   endCandleIndex: number;
   /** 本轮间隔K线数 */
   intervalCandles: number;
-  /** 止盈时的资产倍率（>= M_T） */
-  finalMultiplier: number;
+  /** 止盈时的风险资金 VC（>= M_T） */
+  finalVC: number;
   /** 本轮交易次数 */
   tradeCount: number;
 }
 
 /**
- * 止损事件记录（与 TakeProfitEvent 对称）
+ * 止损事件记录
  * 
- * 当资金曲线触及动态风控线时触发
- * 风控线定义: riskLine(t) = 1 - C * (t - roundStart)
- * 其中 C 是基于历史亏损速度动态估计的值
+ * 止损条件：VC(t) <= 0
+ * 即 PnL(t) <= RiskLine(t)
  */
 export interface StopLossEvent {
   /** 第几轮（从0开始） */
@@ -171,14 +173,16 @@ export interface StopLossEvent {
   endCandleIndex: number;
   /** 本轮间隔K线数 */
   intervalCandles: number;
-  /** 止损时的资产倍率 */
-  finalMultiplier: number;
-  /** 触发时的风控线位置 */
-  riskLineValue: number;
-  /** 触发时的 C 估计值 */
+  /** 止损时的风险资金 VC（<= 0） */
+  finalVC: number;
+  /** 止损时的 PnL */
+  finalPnL: number;
+  /** 止损时的风控线 RiskLine */
+  finalRiskLine: number;
+  /** 触发时的 C 值 */
   estimatedC: number;
-  /** 本轮最大回撤 (从1到最低点) */
-  maxDrawdown: number;
+  /** 触发时的 StopLoss 值 */
+  stopLoss: number;
   /** 本轮交易次数 */
   tradeCount: number;
 }
@@ -186,18 +190,20 @@ export interface StopLossEvent {
 /**
  * 风控统计结果
  * 
- * 核心思想：
- * - C 是动态估计值，基于历史亏损速度 = abs(pnl) / 持仓K线数
- * - 观察期：在获得第一个 C 估计值之前，不进行实际交易
- * - 实盘期：使用学习到的 C 计算风控线，触发止损重置
+ * 核心变量：
+ * - C(t): 基准现金流速度 = max(亏损额/交易时间)
+ * - StopLoss(t): 基准止损额 = 历史单笔最大浮亏
+ * - Position(t) = StopLoss > 0 ? max(1, floor(VC/StopLoss/L)) : 0
  */
 export interface RiskControlStats {
-  /** 观察期结束的 K 线索引（第一次亏损的位置） */
+  /** 观察期结束的 K 线索引（C 和 StopLoss 首次都 > 0 的位置） */
   observationEndIndex: number;
   /** 观察期内跳过的交易次数 */
   skippedTradesInObservation: number;
-  /** 最终学习到的 C 值（最大亏损速度） */
+  /** 最终学习到的 C 值 */
   learnedC: number;
+  /** 最终学习到的 StopLoss 值 */
+  learnedStopLoss: number;
   /** 止损事件列表 */
   stopLossEvents: StopLossEvent[];
   /** 止损次数 */
@@ -247,14 +253,22 @@ export interface TakeProfitTargetStats {
 
 /**
  * 虚拟账户状态（用于多账户并行追踪）
+ * 
+ * 新风控框架核心状态：
+ * - PnL(t): 投注账户累计盈亏
+ * - RiskLine(t): 风控线，每K线下降 C(t)
+ * - VC(t) = PnL(t) - RiskLine(t): 风险资金
+ * - Position(t): 仓位（非负整数）
  */
 export interface VirtualAccountState {
-  /** 当前资产倍率 m(t) */
-  currentMultiplier: number;
-  /** 当前仓位大小 */
+  /** 投注账户累计盈亏 PnL(t) */
+  pnl: number;
+  /** 风控线 RiskLine(t) */
+  riskLine: number;
+  /** 风险资金 VC(t) = PnL - RiskLine */
+  ventureCapital: number;
+  /** 当前仓位大小 Position(t)（非负整数） */
   positionSize: number;
-  /** 连胜次数 */
-  consecutiveWins: number;
   /** 本轮开始的K线索引 */
   roundStartIndex: number;
   /** 本轮交易次数 */
@@ -309,6 +323,8 @@ export interface TradeRecord {
   pnlPercent: number;
   /** 是否盈利 */
   isWin: boolean;
+  /** 持仓期间最大浮亏（正数表示亏损） */
+  maxDrawdown: number;
 }
 
 /**
@@ -317,7 +333,11 @@ export interface TradeRecord {
  * 基准账户特点：
  * - 固定仓位 = 1
  * - 连续运行，不止盈/止损
- * - 用于计算 C 值和基准净值曲线
+ * - 用于计算 C 值和 StopLoss 值
+ * 
+ * 核心变量：
+ * - C(t) = max(亏损额/交易时间)：基准现金流速度
+ * - StopLoss(t) = 历史单笔最大浮亏：基准止损额
  */
 export interface BaselineSnapshot {
   /** K线索引 */
@@ -326,16 +346,26 @@ export interface BaselineSnapshot {
   tradeIndex: number;
   /** 单位仓位PnL百分比 */
   pnlPercent: number;
-  /** 基准累计净值 = Σ(pnl × 1) */
+  /** 基准累计净值 BasePnL(t) = Σ(pnl × 1) */
   cumulativeEquity: number;
-  /** 当前学习到的 C 值（最大亏损速度） */
+  /** 当前 C(t) 值（基准现金流速度） */
   estimatedC: number;
+  /** 该笔交易的最大浮亏 */
+  maxDrawdown: number;
+  /** 当前 StopLoss(t) = 历史单笔最大浮亏 */
+  stopLoss: number;
 }
 
 /**
- * 反马丁账户状态快照
+ * 投注账户状态快照
  * 
  * 记录每笔交易后的账户状态变化，用于审计
+ * 
+ * 核心变量：
+ * - PnL(t): 投注账户累计盈亏
+ * - RiskLine(t): 风控线
+ * - VC(t) = PnL(t) - RiskLine(t): 风险资金
+ * - Position(t) = StopLoss > 0 ? max(1, floor(VC/StopLoss)) : 0
  */
 export interface AccountSnapshot {
   /** K线索引 */
@@ -345,70 +375,62 @@ export interface AccountSnapshot {
   /** 事件类型 */
   eventType: 'trade_close' | 'take_profit' | 'stop_loss' | 'observing';
   
-  // 交易前状态
-  /** 交易前资金倍率 */
-  prevMultiplier: number;
-  /** 交易前仓位大小 */
-  prevPositionSize: number;
-  /** 交易前连胜次数 */
-  prevConsecutiveWins: number;
+  // 核心风控变量
+  /** 投注账户累计盈亏 PnL(t) */
+  pnl: number;
+  /** 风控线 RiskLine(t) */
+  riskLine: number;
+  /** 风险资金 VC(t) = PnL - RiskLine */
+  ventureCapital: number;
+  /** 基准止损额 StopLoss(t) */
+  stopLoss: number;
+  /** 基准现金流速度 C(t) */
+  estimatedC: number;
+  /** 仓位大小 Position(t)（非负整数） */
+  positionSize: number;
   
   // 交易详情
   /** 单位仓位PnL百分比 */
   pnlPercent: number;
-  /** 实际PnL = pnlPercent × positionSize（观察期内为0） */
+  /** 实际PnL = pnlPercent × positionSize */
   actualPnl: number;
-  
-  // 交易后状态
-  /** 交易后资金倍率 */
-  newMultiplier: number;
-  /** 交易后仓位大小 */
-  newPositionSize: number;
-  /** 交易后连胜次数 */
-  newConsecutiveWins: number;
-  
-  // 风控状态
-  /** 当前 C 估计值 */
-  estimatedC: number;
-  /** 当前风控线位置 */
-  riskLineValue: number;
   /** 是否在观察期 */
   isObserving: boolean;
-  /** 反马丁累计净值 */
-  cumulativeEquity: number;
 }
 
 /**
  * 样本数据 - 用于可视化
+ * 
+ * 新风控框架的核心曲线：
+ * - PnL 曲线：投注账户累计盈亏
+ * - RiskLine 曲线：风控线（每K线下降 C）
+ * - VC 曲线：风险资金 = PnL - RiskLine
+ * - Position 曲线：仓位大小
  */
 export interface SampleRunData {
   /** 价格序列（收盘价） */
   prices: number[];
-  /** 资金倍率序列（针对特定 M_T） */
-  multiplierCurves: Map<number, number[]>;
+  /** PnL 曲线（针对特定 M_T） */
+  pnlCurves: Map<number, number[]>;
+  /** 风控线曲线（针对特定 M_T） */
+  riskLineCurves: Map<number, number[]>;
+  /** 风险资金 VC 曲线（针对特定 M_T） */
+  vcCurves: Map<number, number[]>;
+  /** 仓位曲线（针对特定 M_T） */
+  positionCurves: Map<number, number[]>;
   /** 止盈事件标记（K线索引） */
   takeProfitMarkers: Map<number, number[]>;
   /** 止损事件标记（K线索引） */
   stopLossMarkers: Map<number, number[]>;
-  /** 风控线序列（针对特定 M_T） - 用于可视化动态风控线 */
-  riskLineCurves: Map<number, number[]>;
   /** 观察期结束索引（针对特定 M_T） */
   observationEndIndices: Map<number, number>;
-  /** 学习到的 C 值序列（针对特定 M_T） - 随时间动态更新 */
+  /** C 值曲线（针对特定 M_T） */
   estimatedCCurves: Map<number, number[]>;
-  /** 
-   * 累计净值曲线（针对特定 M_T）
-   * 
-   * 计算方式: 累计净值 = Σ (pnl × positionSize)
-   * - 初始值为 0
-   * - 观察期内实际仓位=0，不累计
-   * - 使用反马丁格尔仓位（盈利后加倍）
-   * - 不因止盈/止损而重置（连续累计）
-   */
-  equityCurves: Map<number, number[]>;
+  /** StopLoss 值曲线（针对特定 M_T） */
+  stopLossCurves: Map<number, number[]>;
   
   // ============================================
-  // 以下为样本详细报告所需的新增字段
+  // 以下为样本详细报告所需的字段
   // ============================================
   
   /** 完整K线数据 */
@@ -421,7 +443,7 @@ export interface SampleRunData {
   baselineSnapshots?: BaselineSnapshot[];
   /** 基准净值曲线（固定仓位=1） */
   baselineEquityCurve?: number[];
-  /** 反马丁账户快照序列（M_T -> 快照列表） */
+  /** 投注账户快照序列（M_T -> 快照列表） */
   accountSnapshots?: Map<number, AccountSnapshot[]>;
 }
 

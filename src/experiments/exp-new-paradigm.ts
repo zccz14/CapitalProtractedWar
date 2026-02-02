@@ -111,8 +111,6 @@ async function runNewParadigmExperiment(): Promise<string> {
         })),
         betting: {
           takeProfitTargets: DEFAULT_TAKE_PROFIT_TARGETS,
-          winMultiplier: 2,
-          loseMultiplier: 0,
           tradingCostRate: TRADING_COST_RATE,
         },
         monteCarloRuns: MONTE_CARLO_RUNS,
@@ -206,8 +204,6 @@ async function runQuickTest(): Promise<string> {
       })),
       betting: {
         takeProfitTargets: DEFAULT_TAKE_PROFIT_TARGETS,  // 完整的止盈线序列到1024
-        winMultiplier: 2,
-        loseMultiplier: 0,
       },
       monteCarloRuns: 50,  // 快速测试用50次MC
     };

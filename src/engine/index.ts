@@ -6,16 +6,18 @@
  * 2. 信号序列生成一次，复用于所有投注策略（不同 M_T）
  * 3. 多账户并行追踪，各账户独立止盈、独立重置
  * 
- * 重要变更（双账户架构）：
- * - 基准账户（BaselineTracker）：固定仓位=1，计算 C 值
- * - 反马丁账户（MultiAccountTracker）：参考基准账户的 C 值
+ * 新风控框架：
+ * - 基准账户（BaselineTracker）：固定仓位=1，计算 C(t) 和 StopLoss(t)
+ * - 投注账户（MultiAccountTracker）：参考基准账户的 C 和 StopLoss
  * - 成交价格：使用下一根K线开盘价（非当前收盘价）
- * - 观察期：C=0 时为观察期，反马丁账户实际仓位=0
+ * - 观察期：C=0 或 StopLoss=0 时为观察期，Position=0
  * 
- * 评估指标变化：
- * - 不再关注 E[M]（易被极端值影响）
- * - 不再关注 P(M >= k)（时间拉长总能成功）
- * - 核心关注：各 M_T 下止盈事件的平均时间间隔
+ * 核心公式：
+ * - C(t) = max(亏损额/交易时间)
+ * - StopLoss(t) = 历史单笔最大浮亏
+ * - RiskLine(t+1) = RiskLine(t) - C(t)  // 每K线下降
+ * - VC(t) = PnL(t) - RiskLine(t)
+ * - Position(t) = StopLoss > 0 ? max(1, floor(VC/StopLoss)) : 0
  */
 
 import type { 
@@ -33,8 +35,7 @@ import type {
   SampleRunData,
   TradeRecord,
 } from '../types.js';
-import { MultiAccountTracker } from '../betting/index.js';
-import { BaselineTracker } from '../betting/baseline-tracker.js';
+import { MultiAccountTracker, BaselineTracker } from '../betting/index.js';
 import { createSignalStrategy } from '../signal/index.js';
 import { generateMarket } from '../market/generator.js';
 
@@ -45,28 +46,6 @@ import { generateMarket } from '../market/generator.js';
 export class NewParadigmBacktestEngine {
   /**
    * 评估单个信号策略在给定市场上的表现
-   * 
-   * 重构说明（双账户架构）：
-   * 1. 基准账户（BaselineTracker）：
-   *    - 固定仓位 = 1
-   *    - 连续运行，不止盈/止损
-   *    - 计算 C 值（最大亏损速度）
-   *    - 记录基准净值曲线
-   * 
-   * 2. 反马丁账户（MultiAccountTracker）：
-   *    - 参考基准账户的 C 值
-   *    - C = 0 时为观察期，实际仓位 = 0
-   *    - 实盘期使用反马丁格尔仓位管理
-   * 
-   * 3. 成交价格改进：
-   *    - 信号在当前K线产生
-   *    - 成交在下一根K线开盘价执行
-   * 
-   * @param candles - 市场K线序列
-   * @param strategy - 信号策略
-   * @param tracker - 多账户追踪器
-   * @param recordSample - 是否记录样本数据（用于可视化）
-   * @returns 信号策略评估结果和可选的样本数据
    */
   evaluateSignalStrategy(
     candles: Candle[],
@@ -84,7 +63,7 @@ export class NewParadigmBacktestEngine {
     }
     baseline.setTotalCandles(candles.length);
     
-    // 启用样本记录（必须在 setTotalCandles 之前调用）
+    // 启用样本记录
     if (recordSample) {
       tracker.enableSampleRecording();
     }
@@ -139,6 +118,13 @@ export class NewParadigmBacktestEngine {
       const candle = candles[i];
       
       // ============================================
+      // 步骤0：每根K线更新风控线（即使没有交易）
+      // RiskLine(t+1) = RiskLine(t) - C(t)
+      // ============================================
+      const currentC = baseline.getEstimatedC();
+      tracker.updateRiskLineForAllAccounts(i, currentC);
+      
+      // ============================================
       // 步骤1：处理上一根K线的待执行信号（使用当前K线开盘价成交）
       // ============================================
       if (pendingSignal !== null && pendingSignalIndex !== null) {
@@ -149,19 +135,25 @@ export class NewParadigmBacktestEngine {
           const pnlPercent = this.calculatePnL(currentPosition, entryPrice, executionPrice);
           const holdingPeriod = i - entryIndex;
           
-          // 先更新基准账户（计算 C 值）
-          baseline.processTradeResult(pnlPercent, i, holdingPeriod, totalTradeCount);
-          const externalC = baseline.getEstimatedC();
+          // 计算持仓期间最大浮亏
+          const maxDrawdown = this.calculateMaxDrawdown(
+            candles,
+            entryIndex,
+            i,
+            currentPosition,
+            entryPrice
+          );
           
-          // 再更新反马丁账户（使用基准账户的 C 值）
+          // 先更新基准账户（计算 C 值和 StopLoss）
+          baseline.processTradeResult(pnlPercent, i, holdingPeriod, totalTradeCount, maxDrawdown);
+          
+          // 再更新投注账户
           tracker.processTradeResult(
-            pnlPercent, 
-            i, 
-            entryPrice, 
-            executionPrice, 
-            entryIndex, 
+            pnlPercent,
+            i,
             totalTradeCount,
-            externalC
+            baseline.getEstimatedC(),
+            baseline.getStopLoss()
           );
           
           // 记录交易
@@ -178,6 +170,7 @@ export class NewParadigmBacktestEngine {
               holdingPeriod,
               pnlPercent,
               isWin: pnlPercent > 0,
+              maxDrawdown,
             });
           }
           
@@ -188,6 +181,9 @@ export class NewParadigmBacktestEngine {
         
         // 1b. 开新仓
         if (pendingSignal !== 0) {
+          // 开仓前准备仓位
+          tracker.preparePositionForAllAccounts(baseline.getStopLoss());
+          
           currentPosition = pendingSignal;
           entryPrice = executionPrice;
           entryIndex = i;
@@ -220,9 +216,7 @@ export class NewParadigmBacktestEngine {
     }
     
     // ============================================
-    // 处理最后一笔待执行信号（如果K线已结束）
-    // 注意：实际中最后一个信号无法执行（没有下一根K线的开盘价）
-    // 但为了完整性，我们用最后K线的收盘价处理未平仓交易
+    // 处理最后一笔未平仓交易
     // ============================================
     if (currentPosition !== 0 && entryPrice !== null && entryIndex !== null && entrySignalIndex !== null) {
       const exitPrice = candles[candles.length - 1].close;
@@ -230,19 +224,25 @@ export class NewParadigmBacktestEngine {
       const pnlPercent = this.calculatePnL(currentPosition, entryPrice, exitPrice);
       const holdingPeriod = exitIndex - entryIndex;
       
-      // 先更新基准账户
-      baseline.processTradeResult(pnlPercent, exitIndex, holdingPeriod, totalTradeCount);
-      const externalC = baseline.getEstimatedC();
+      // 计算最大浮亏
+      const maxDrawdown = this.calculateMaxDrawdown(
+        candles,
+        entryIndex,
+        exitIndex,
+        currentPosition,
+        entryPrice
+      );
       
-      // 再更新反马丁账户
+      // 更新基准账户
+      baseline.processTradeResult(pnlPercent, exitIndex, holdingPeriod, totalTradeCount, maxDrawdown);
+      
+      // 更新投注账户
       tracker.processTradeResult(
-        pnlPercent, 
-        exitIndex, 
-        entryPrice, 
-        exitPrice, 
-        entryIndex, 
+        pnlPercent,
+        exitIndex,
         totalTradeCount,
-        externalC
+        baseline.getEstimatedC(),
+        baseline.getStopLoss()
       );
       
       // 记录交易
@@ -251,7 +251,7 @@ export class NewParadigmBacktestEngine {
           tradeIndex: totalTradeCount,
           signalIndex: entrySignalIndex,
           entryIndex: entryIndex,
-          exitSignalIndex: exitIndex,  // 强制平仓，没有真正的退出信号
+          exitSignalIndex: exitIndex,
           exitIndex: exitIndex,
           direction: currentPosition as 1 | -1,
           entryPrice,
@@ -259,6 +259,7 @@ export class NewParadigmBacktestEngine {
           holdingPeriod,
           pnlPercent,
           isWin: pnlPercent > 0,
+          maxDrawdown,
         });
       }
       
@@ -284,14 +285,16 @@ export class NewParadigmBacktestEngine {
     if (recordSample) {
       sampleData = {
         prices: candles.map(c => c.close),
-        multiplierCurves: tracker.getMultiplierCurves(),
+        pnlCurves: tracker.getPnLCurves(),
+        riskLineCurves: tracker.getRiskLineCurves(),
+        vcCurves: tracker.getVCCurves(),
+        positionCurves: tracker.getPositionCurves(),
         takeProfitMarkers: tracker.getTakeProfitMarkers(),
         stopLossMarkers: tracker.getStopLossMarkers(),
-        riskLineCurves: tracker.getRiskLineCurves(),
         observationEndIndices: tracker.getObservationEndIndices(),
         estimatedCCurves: tracker.getEstimatedCCurves(),
-        equityCurves: tracker.getEquityCurves(),
-        // 新增：完整样本数据
+        stopLossCurves: tracker.getStopLossCurves(),
+        // 详细数据
         candles: candles,
         signals: signals,
         trades: trades,
@@ -309,6 +312,40 @@ export class NewParadigmBacktestEngine {
    */
   private calculatePnL(position: number, entryPrice: number, exitPrice: number): number {
     return position * (exitPrice - entryPrice) / entryPrice;
+  }
+
+  /**
+   * 计算持仓期间最大浮亏
+   * 
+   * @param candles - K线数据
+   * @param entryIndex - 开仓K线索引
+   * @param exitIndex - 平仓K线索引
+   * @param direction - 方向：1=做多, -1=做空
+   * @param entryPrice - 开仓价格
+   * @returns 最大浮亏（正数表示亏损）
+   */
+  private calculateMaxDrawdown(
+    candles: Candle[],
+    entryIndex: number,
+    exitIndex: number,
+    direction: number,
+    entryPrice: number
+  ): number {
+    let maxDrawdown = 0;
+    
+    for (let i = entryIndex; i <= exitIndex && i < candles.length; i++) {
+      const candle = candles[i];
+      // 做多：用最低价计算浮亏
+      // 做空：用最高价计算浮亏
+      const worstPrice = direction > 0 ? candle.low : candle.high;
+      // drawdown > 0 表示亏损
+      const drawdown = -direction * (worstPrice - entryPrice) / entryPrice;
+      if (drawdown > maxDrawdown) {
+        maxDrawdown = drawdown;
+      }
+    }
+    
+    return maxDrawdown;
   }
 }
 
@@ -354,10 +391,7 @@ export class NewParadigmExperimentRunner {
         });
         
         // 创建多账户追踪器（每个信号策略独立）
-        const tracker = new MultiAccountTracker(
-          config.betting,
-          config.market.leverage ?? 1
-        );
+        const tracker = new MultiAccountTracker(config.betting);
         
         // 评估
         const { result, sampleData } = engine.evaluateSignalStrategy(
@@ -520,6 +554,5 @@ export class NewParadigmExperimentRunner {
 // 导出（保持向后兼容性）
 // ============================================
 
-// 旧的引擎类型别名
 export { NewParadigmBacktestEngine as BacktestEngine };
 export { NewParadigmExperimentRunner as ExperimentRunner };

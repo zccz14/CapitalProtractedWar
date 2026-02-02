@@ -502,7 +502,186 @@ function generatePriceChartSVG(
 }
 
 // ============================================
-// 资金曲线图 SVG（含风控线）
+// 风险资金 VC 曲线图 SVG（新风控框架）
+// ============================================
+
+function generateVCChartSVG(
+  vcCurve: number[],
+  pnlCurve: number[],
+  riskLineCurve: number[],
+  takeProfitMarkers: number[],
+  stopLossMarkers: number[],
+  targetMultiplier: number,
+  width: number = 800,
+  height: number = 250,
+  title?: string,
+  observationEndIndex?: number
+): string {
+  if (vcCurve.length === 0) {
+    return `<svg width="${width}" height="80">
+      <text x="${width/2}" y="40" text-anchor="middle" fill="#999" font-size="14">无数据</text>
+    </svg>`;
+  }
+
+  const padding = { top: 35, right: 50, bottom: 30, left: 60 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  
+  // 降采样以提高性能（最多1000个点）
+  const sampleRate = Math.max(1, Math.floor(vcCurve.length / 1000));
+  const sampledVC = vcCurve.filter((_, i) => i % sampleRate === 0);
+  const sampledPnL = pnlCurve.filter((_, i) => i % sampleRate === 0);
+  const sampledRiskLine = riskLineCurve.filter((_, i) => i % sampleRate === 0);
+  
+  // 计算 Y 轴范围（包含 PnL、RiskLine、VC、止盈线）
+  const allValues = [...sampledVC, ...sampledPnL, ...sampledRiskLine, targetMultiplier, 0];
+  const minY = Math.min(...allValues);
+  const maxY = Math.max(...allValues);
+  const yRange = maxY - minY || 1;
+  
+  // 坐标转换函数
+  const toX = (i: number) => padding.left + (i / (sampledVC.length - 1)) * chartWidth;
+  const toY = (v: number) => padding.top + chartHeight - ((v - minY) / yRange) * chartHeight;
+  
+  // 生成 VC 曲线路径（蓝色）
+  const vcPoints = sampledVC.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`);
+  const vcPathD = `M ${vcPoints.join(' L ')}`;
+  
+  // 生成 PnL 曲线路径（绿色）
+  const pnlPoints = sampledPnL.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`);
+  const pnlPathD = `M ${pnlPoints.join(' L ')}`;
+  
+  // 生成 RiskLine 曲线路径（红色）
+  const riskLinePoints = sampledRiskLine.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`);
+  const riskLinePathD = `M ${riskLinePoints.join(' L ')}`;
+  
+  // 止盈线位置
+  const targetY = toY(targetMultiplier);
+  
+  // 零线位置
+  const zeroY = toY(0);
+  
+  // 止盈标记点（绿色圆点）
+  const tpMarkersSVG = takeProfitMarkers
+    .filter(idx => idx < vcCurve.length)
+    .map(idx => {
+      const sampledIdx = Math.floor(idx / sampleRate);
+      const x = toX(sampledIdx);
+      const vc = sampledVC[sampledIdx] ?? 0;
+      const y = toY(vc);
+      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5" fill="#27ae60" stroke="white" stroke-width="1.5"/>`;
+    }).join('\n');
+  
+  // 止损标记点（红色叉号）
+  const slMarkersSVG = stopLossMarkers
+    .filter(idx => idx < vcCurve.length)
+    .map(idx => {
+      const sampledIdx = Math.floor(idx / sampleRate);
+      const x = toX(sampledIdx);
+      const vc = sampledVC[sampledIdx] ?? 0;
+      const y = toY(vc);
+      const size = 5;
+      return `
+        <line x1="${x - size}" y1="${y - size}" x2="${x + size}" y2="${y + size}" stroke="#e74c3c" stroke-width="2.5"/>
+        <line x1="${x - size}" y1="${y + size}" x2="${x + size}" y2="${y - size}" stroke="#e74c3c" stroke-width="2.5"/>
+      `;
+    }).join('\n');
+  
+  // 观察期区域（灰色半透明）
+  let observationArea = '';
+  if (observationEndIndex && observationEndIndex > 0) {
+    const obsEndX = toX(Math.floor(observationEndIndex / sampleRate));
+    observationArea = `
+      <rect x="${padding.left}" y="${padding.top}" 
+            width="${obsEndX - padding.left}" height="${chartHeight}" 
+            fill="rgba(128, 128, 128, 0.15)"/>
+      <text x="${(padding.left + obsEndX) / 2}" y="${padding.top + 15}" 
+            text-anchor="middle" font-size="10" fill="#888">观察期</text>
+    `;
+  }
+  
+  // Y轴刻度
+  const yTickValues = [minY, 0, targetMultiplier / 2, targetMultiplier, maxY].filter(v => v >= minY && v <= maxY);
+  const uniqueYTicks = [...new Set(yTickValues.map(v => v.toFixed(2)))].map(s => parseFloat(s));
+  const yTicks = uniqueYTicks.map(val => {
+    const y = toY(val);
+    return `
+      <line x1="${padding.left - 5}" y1="${y}" x2="${padding.left}" y2="${y}" stroke="#ccc" stroke-width="1"/>
+      <text x="${padding.left - 8}" y="${y + 4}" text-anchor="end" font-size="9" fill="#666">${val.toFixed(2)}</text>
+    `;
+  }).join('');
+  
+  const displayTitle = title || `风险资金 VC 曲线 M_T=${targetMultiplier}`;
+  
+  return `
+<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+  <style>text { font-family: -apple-system, sans-serif; }</style>
+  <defs>
+    <linearGradient id="vcGrad${targetMultiplier}" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3498db;stop-opacity:0.3" />
+      <stop offset="100%" style="stop-color:#3498db;stop-opacity:0.05" />
+    </linearGradient>
+  </defs>
+  
+  <text x="${width / 2}" y="18" text-anchor="middle" font-size="12" font-weight="600" fill="#2c3e50">${displayTitle}</text>
+  <text x="${width / 2}" y="30" text-anchor="middle" font-size="9" fill="#7f8c8d">止盈: ${takeProfitMarkers.length} | 止损: ${stopLossMarkers.length}</text>
+  
+  <!-- 坐标轴 -->
+  <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${height - padding.bottom}" stroke="#ddd" stroke-width="1"/>
+  <line x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}" stroke="#ddd" stroke-width="1"/>
+  
+  ${yTicks}
+  
+  <!-- 观察期区域 -->
+  ${observationArea}
+  
+  <!-- 零线（灰色虚线） -->
+  <line x1="${padding.left}" y1="${zeroY}" x2="${width - padding.right}" y2="${zeroY}" 
+        stroke="#999" stroke-width="1" stroke-dasharray="4,4"/>
+  
+  <!-- 止盈线（绿色虚线） -->
+  <line x1="${padding.left}" y1="${targetY}" x2="${width - padding.right}" y2="${targetY}" 
+        stroke="#27ae60" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <text x="${width - padding.right + 5}" y="${targetY + 4}" font-size="9" fill="#27ae60">M_T=${targetMultiplier}</text>
+  
+  <!-- RiskLine 曲线（红色） -->
+  <path d="${riskLinePathD}" fill="none" stroke="#e74c3c" stroke-width="1.5"/>
+  
+  <!-- PnL 曲线（绿色） -->
+  <path d="${pnlPathD}" fill="none" stroke="#27ae60" stroke-width="1.5" stroke-dasharray="3,2"/>
+  
+  <!-- VC 填充区域 -->
+  <path d="${vcPathD} L ${width - padding.right},${zeroY} L ${padding.left},${zeroY} Z" fill="url(#vcGrad${targetMultiplier})"/>
+  
+  <!-- VC 曲线（蓝色） -->
+  <path d="${vcPathD}" fill="none" stroke="#3498db" stroke-width="2"/>
+  
+  <!-- 止盈标记 -->
+  ${tpMarkersSVG}
+  
+  <!-- 止损标记 -->
+  ${slMarkersSVG}
+  
+  <!-- X轴标签 -->
+  <text x="${padding.left}" y="${height - 8}" font-size="9" fill="#666">0</text>
+  <text x="${width - padding.right}" y="${height - 8}" text-anchor="end" font-size="9" fill="#666">${vcCurve.length}</text>
+  
+  <!-- 图例 -->
+  <g transform="translate(${padding.left + 10}, ${padding.top + 10})">
+    <line x1="0" y1="0" x2="20" y2="0" stroke="#3498db" stroke-width="2"/>
+    <text x="25" y="4" font-size="9" fill="#666">VC (风险资金)</text>
+    
+    <line x1="100" y1="0" x2="120" y2="0" stroke="#27ae60" stroke-width="1.5" stroke-dasharray="3,2"/>
+    <text x="125" y="4" font-size="9" fill="#666">PnL</text>
+    
+    <line x1="170" y1="0" x2="190" y2="0" stroke="#e74c3c" stroke-width="1.5"/>
+    <text x="195" y="4" font-size="9" fill="#666">RiskLine</text>
+  </g>
+</svg>`;
+}
+
+// ============================================
+// 资金曲线图 SVG（含风控线）- 旧版保留
 // ============================================
 
 function generateMultiplierChartSVG(
@@ -714,25 +893,27 @@ function generateSignalDetailHTML(
       `;
       
       // 资金曲线图（选取几个关键的 M_T）
-      const chartTargets = [2, 4, 8, 16].filter(t => sampleData.multiplierCurves.has(t));
+      const chartTargets = [2, 4, 8, 16].filter(t => sampleData.pnlCurves.has(t));
       if (chartTargets.length > 0) {
         const multiplierCharts = chartTargets.map(target => {
-          const curve = sampleData.multiplierCurves.get(target);
+          const pnlCurve = sampleData.pnlCurves.get(target);
+          const riskLineCurve = sampleData.riskLineCurves?.get(target);
+          const vcCurve = sampleData.vcCurves?.get(target);
           const tpMarkers = sampleData.takeProfitMarkers.get(target) || [];
           const slMarkers = sampleData.stopLossMarkers?.get(target) || [];
-          const riskLine = sampleData.riskLineCurves?.get(target);
           const obsEndIdx = sampleData.observationEndIndices?.get(target);
           
-          if (curve) {
-            return `<div class="chart-container">${generateMultiplierChartSVG(
-              curve, 
-              tpMarkers, 
-              target, 
-              440, 
-              220,
-              undefined,
-              riskLine,
+          if (pnlCurve && riskLineCurve && vcCurve) {
+            return `<div class="chart-container">${generateVCChartSVG(
+              vcCurve,
+              pnlCurve,
+              riskLineCurve,
+              tpMarkers,
               slMarkers,
+              target,
+              440,
+              250,
+              undefined,
               obsEndIdx
             )}</div>`;
           }
@@ -741,10 +922,10 @@ function generateSignalDetailHTML(
         
         multiplierChartsHTML = `
           <div class="card">
-            <h2>资金倍率曲线（样本运行 #1）</h2>
+            <h2>投注账户曲线（样本运行 #1）</h2>
             <p style="color: #666; margin-bottom: 15px;">
-              绿色曲线: 资金倍率 | 绿色虚线: 止盈线 | 红色实线: 风控线<br/>
-              绿点: 止盈事件 | 红叉: 止损事件 | 灰色区域: 观察期
+              蓝色曲线: VC (风险资金) | 绿色虚线: PnL (累计盈亏) | 红色实线: RiskLine (风控线)<br/>
+              绿点: 止盈事件 (VC≥M_T) | 红叉: 止损事件 (VC≤0) | 灰色区域: 观察期
             </p>
             <div class="grid grid-2">
               ${multiplierCharts.join('')}
@@ -754,10 +935,10 @@ function generateSignalDetailHTML(
       }
       
       // 净值曲线图（累计盈亏）
-      const equityTargets = [2, 4, 8, 16].filter(t => sampleData.equityCurves?.has(t));
+      const equityTargets = [2, 4, 8, 16].filter(t => sampleData.pnlCurves?.has(t));
       if (equityTargets.length > 0) {
         const equityCharts = equityTargets.map(target => {
-          const curve = sampleData.equityCurves?.get(target);
+          const curve = sampleData.pnlCurves?.get(target);
           if (curve) {
             return `<div class="chart-container">${generateEquityChartSVG(
               curve,
@@ -1389,12 +1570,12 @@ export function generateSampleDetailHTML(
     baselineSnapshots,
     baselineEquityCurve,
     accountSnapshots,
-    multiplierCurves,
+    vcCurves,
     takeProfitMarkers,
     stopLossMarkers,
     riskLineCurves,
     observationEndIndices,
-    equityCurves,
+    pnlCurves,
   } = sampleData;
   
   // ============================================
@@ -1429,25 +1610,27 @@ export function generateSampleDetailHTML(
     : '';
   
   // ============================================
-  // 4. 资金曲线图（选择 M_T=2 作为示例）
+  // 4. 投注账户曲线图（选择 M_T=2 作为示例）
   // ============================================
   const targetForChart = 2;
-  const multiplierCurve = multiplierCurves?.get(targetForChart);
+  const pnlCurve = pnlCurves?.get(targetForChart);
+  const vcCurve = vcCurves?.get(targetForChart);
+  const riskCurve = riskLineCurves?.get(targetForChart);
   const tpMarkers = takeProfitMarkers?.get(targetForChart) ?? [];
   const slMarkers = stopLossMarkers?.get(targetForChart) ?? [];
-  const riskCurve = riskLineCurves?.get(targetForChart);
   const obsEndIdx = observationEndIndices?.get(targetForChart) ?? 0;
   
-  const multiplierChartSVG = multiplierCurve 
-    ? generateMultiplierChartSVG(
-        multiplierCurve,
+  const multiplierChartSVG = (pnlCurve && vcCurve && riskCurve)
+    ? generateVCChartSVG(
+        vcCurve,
+        pnlCurve,
+        riskCurve,
         tpMarkers,
+        slMarkers,
         targetForChart,
         900,
-        250,
-        `反马丁账户资金曲线 M_T=${targetForChart}x`,
-        riskCurve,
-        slMarkers,
+        280,
+        `投注账户曲线 M_T=${targetForChart}`,
         obsEndIdx
       )
     : '';
@@ -1839,6 +2022,7 @@ function generateTradesTable(trades: TradeRecord[]): string {
       <td>${t.exitPrice.toFixed(4)}</td>
       <td>${t.holdingPeriod}</td>
       <td>${pnlText}</td>
+      <td>${(t.maxDrawdown * 100).toFixed(3)}%</td>
     </tr>`;
   }).join('');
   
@@ -1855,6 +2039,7 @@ function generateTradesTable(trades: TradeRecord[]): string {
         <th>平仓价</th>
         <th>持仓周期</th>
         <th>PnL</th>
+        <th>最大浮亏</th>
       </tr>
     </thead>
     <tbody>${rows}</tbody>
@@ -1883,6 +2068,8 @@ function generateBaselineTable(snapshots: BaselineSnapshot[]): string {
       <td>${pnlText}</td>
       <td>${equityText}</td>
       <td>${(s.estimatedC * 100).toFixed(4)}%</td>
+      <td>${(s.maxDrawdown * 100).toFixed(3)}%</td>
+      <td>${(s.stopLoss * 100).toFixed(3)}%</td>
     </tr>`;
   }).join('');
   
@@ -1894,6 +2081,8 @@ function generateBaselineTable(snapshots: BaselineSnapshot[]): string {
         <th>PnL</th>
         <th>累计净值</th>
         <th>C 值</th>
+        <th>浮亏</th>
+        <th>StopLoss</th>
       </tr>
     </thead>
     <tbody>${rows}</tbody>
@@ -1933,18 +2122,22 @@ function generateAccountSnapshotsTable(snapshots: AccountSnapshot[], targetMulti
         ? `<span style="color: #27ae60;">+${(s.actualPnl * 100).toFixed(3)}%</span>`
         : `<span style="color: #e74c3c;">${(s.actualPnl * 100).toFixed(3)}%</span>`);
     
+    const vcText = s.ventureCapital >= 0
+      ? `<span style="color: #27ae60;">${s.ventureCapital.toFixed(4)}</span>`
+      : `<span style="color: #e74c3c;">${s.ventureCapital.toFixed(4)}</span>`;
+    
     return `<tr class="${rowClass}">
       <td>${s.tradeIndex}</td>
       <td>${s.candleIndex}</td>
       <td>${eventText}</td>
-      <td>${s.prevMultiplier.toFixed(4)}</td>
-      <td>${s.prevPositionSize.toFixed(1)}</td>
+      <td>${(s.pnl * 100).toFixed(3)}%</td>
+      <td>${s.riskLine.toFixed(4)}</td>
+      <td>${vcText}</td>
+      <td>${s.positionSize}</td>
       <td>${(s.pnlPercent * 100).toFixed(3)}%</td>
       <td>${actualPnlText}</td>
-      <td>${s.newMultiplier.toFixed(4)}</td>
-      <td>${s.newPositionSize.toFixed(1)}</td>
-      <td>${s.riskLineValue.toFixed(4)}</td>
-      <td>${(s.cumulativeEquity * 100).toFixed(3)}%</td>
+      <td>${s.estimatedC.toFixed(6)}</td>
+      <td>${s.stopLoss.toFixed(4)}</td>
     </tr>`;
   }).join('');
   
@@ -1954,14 +2147,14 @@ function generateAccountSnapshotsTable(snapshots: AccountSnapshot[], targetMulti
         <th>交易#</th>
         <th>K线</th>
         <th>事件</th>
-        <th>前倍率</th>
-        <th>前仓位</th>
+        <th>PnL</th>
+        <th>风控线</th>
+        <th>VC</th>
+        <th>仓位</th>
         <th>单位PnL</th>
         <th>实际PnL</th>
-        <th>新倍率</th>
-        <th>新仓位</th>
-        <th>风控线</th>
-        <th>累计净值</th>
+        <th>C值</th>
+        <th>StopLoss</th>
       </tr>
     </thead>
     <tbody>${rows}</tbody>

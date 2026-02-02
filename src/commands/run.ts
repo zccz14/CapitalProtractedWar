@@ -112,8 +112,6 @@ export class RunCommand extends Command {
       }],
       betting: {
         takeProfitTargets: DEFAULT_TAKE_PROFIT_TARGETS,
-        winMultiplier: 2,
-        loseMultiplier: 0,
         tradingCostRate: 0.0003,  // 0.03%
       },
       monteCarloRuns,
