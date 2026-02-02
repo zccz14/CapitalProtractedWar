@@ -1099,19 +1099,58 @@ function generateSampleLinksHTML(
     return '';
   }
   
-  // 检查是否有完整的样本数据
-  const hasTradeData = result.sampleRuns[0].sampleData?.get(signalType)?.trades;
-  if (!hasTradeData) {
+  // 筛选出有该信号策略样本数据的运行
+  const runsWithData = result.sampleRuns.filter(run => {
+    const sampleData = run.sampleData?.get(signalType);
+    return sampleData && sampleData.trades && sampleData.trades.length > 0;
+  });
+  
+  if (runsWithData.length === 0) {
     return '';
   }
   
-  const links = result.sampleRuns.slice(0, 3).map((run, i) => {
-    const sampleFilename = `sample_${sanitizeFilename(marketName)}_${sanitizeFilename(signalType)}_run${i + 1}.html`;
+  const takeProfitTargets = result.config.betting.takeProfitTargets;
+  const totalRuns = result.monteCarloRuns;
+  
+  // 按样本类型排序：best -> median -> worst
+  const typeOrder: Record<string, number> = { best: 0, median: 1, worst: 2 };
+  const sortedRuns = [...runsWithData].sort((a, b) => {
+    const typeA = a.sampleMetadata?.get(signalType)?.sampleType ?? 'median';
+    const typeB = b.sampleMetadata?.get(signalType)?.sampleType ?? 'median';
+    return typeOrder[typeA] - typeOrder[typeB];
+  });
+  
+  // 为每个样本运行生成一个卡片
+  const runCards = sortedRuns.map((run) => {
+    const meta = run.sampleMetadata?.get(signalType);
+    const originalRunIndex = meta?.runIndex ?? run.runIndex;
+    const sampleType = meta?.sampleType ?? 'median';
+    const baselinePnL = meta?.baselinePnL ?? 0;
+    
+    const typeLabel = sampleType === 'best' ? '最佳' 
+                    : sampleType === 'worst' ? '最差' 
+                    : '中位';
+    const typeColor = sampleType === 'best' ? '#27ae60'
+                    : sampleType === 'worst' ? '#e74c3c'
+                    : '#3498db';
+    const pnlStr = (baselinePnL * 100).toFixed(2);
+    const pnlColor = baselinePnL >= 0 ? '#27ae60' : '#e74c3c';
+    
+    const mtLinks = takeProfitTargets.map(mt => {
+      const sampleFilename = `sample_${sanitizeFilename(marketName)}_${sanitizeFilename(signalType)}_run${originalRunIndex + 1}_mt${mt}.html`;
+      return `<a href="${sampleFilename}" class="mt-link">M_T=${mt}</a>`;
+    }).join('');
+    
     return `
-      <a href="${sampleFilename}" class="link-card" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
-        <h4>样本运行 #${i + 1}</h4>
-        <p>查看完整交易记录和账户状态变化</p>
-      </a>
+      <div class="sample-run-card" style="border-left: 4px solid ${typeColor};">
+        <h4>
+          <span class="sample-type-badge" style="background: ${typeColor};">${typeLabel}</span>
+          Run #${originalRunIndex + 1} | 基准PnL: <span style="color: ${pnlColor};">${pnlStr}%</span>
+        </h4>
+        <div class="mt-links-grid">
+          ${mtLinks}
+        </div>
+      </div>
     `;
   }).join('');
   
@@ -1119,11 +1158,48 @@ function generateSampleLinksHTML(
     <div class="card">
       <h2>样本详情报告</h2>
       <p style="color: #666; margin-bottom: 15px;">
-        查看样本级别的详细数据，包含完整交易记录、账户状态变化、K线数据等
+        从 <strong>${totalRuns}</strong> 次蒙特卡洛运行中选择 <strong>3</strong> 个代表性样本（基于基准账户 PnL 排序）。
+        每个 M_T 值有独立的报告文件。
       </p>
-      <div class="grid grid-3">
-        ${links}
-      </div>
+      <style>
+        .sample-run-card {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          border-radius: 12px;
+          padding: 15px;
+          margin-bottom: 15px;
+          color: white;
+        }
+        .sample-run-card h4 {
+          margin: 0 0 10px 0;
+          font-size: 16px;
+        }
+        .sample-type-badge {
+          display: inline-block;
+          padding: 2px 10px;
+          border-radius: 4px;
+          margin-right: 10px;
+          font-size: 13px;
+        }
+        .mt-links-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .mt-link {
+          display: inline-block;
+          padding: 6px 12px;
+          background: rgba(255,255,255,0.2);
+          border-radius: 6px;
+          color: white;
+          text-decoration: none;
+          font-size: 13px;
+          transition: background 0.2s;
+        }
+        .mt-link:hover {
+          background: rgba(255,255,255,0.4);
+        }
+      </style>
+      ${runCards}
     </div>
   `;
 }
@@ -1479,33 +1555,46 @@ export async function saveReportSuite(suite: ReportSuite): Promise<string> {
       fs.writeFileSync(signalPath, generateSignalDetailHTML(result, signalResult, outputDir), 'utf-8');
       console.log(`已生成: ${signalPath}`);
       
-      // 4. 生成样本详情页面（为前3个样本运行生成）
+      // 4. 生成样本详情页面（为代表性样本生成，每个 M_T 一个文件）
       if (result.sampleRuns && result.sampleRuns.length > 0) {
-        for (let runIndex = 0; runIndex < Math.min(3, result.sampleRuns.length); runIndex++) {
-          const run = result.sampleRuns[runIndex];
+        const takeProfitTargets = result.config.betting.takeProfitTargets;
+        
+        // 筛选出有该信号策略样本数据的运行
+        const runsWithData = result.sampleRuns.filter(run => {
           const sampleData = run.sampleData?.get(signalResult.signalType);
+          return sampleData && sampleData.trades && sampleData.trades.length > 0;
+        });
+        
+        for (const run of runsWithData) {
+          const sampleData = run.sampleData?.get(signalResult.signalType)!;
+          const meta = run.sampleMetadata?.get(signalResult.signalType);
+          const originalRunIndex = meta?.runIndex ?? run.runIndex;
+          const sampleType = meta?.sampleType ?? 'median';
           
-          // 只为有完整样本数据的运行生成报告
-          if (sampleData && sampleData.trades && sampleData.trades.length > 0) {
-            const sampleFilename = `sample_${sanitizeFilename(result.config.name)}_${sanitizeFilename(signalResult.signalType)}_run${runIndex + 1}.html`;
+          // 为每个 M_T 生成独立文件
+          for (const targetMT of takeProfitTargets) {
+            const sampleFilename = `sample_${sanitizeFilename(result.config.name)}_${sanitizeFilename(signalResult.signalType)}_run${originalRunIndex + 1}_mt${targetMT}.html`;
             const samplePath = path.join(outputDir, sampleFilename);
             
             const sampleHTML = generateSampleDetailHTML(
               sampleData,
               signalResult.signalType,
               result.config.name,
-              runIndex,
+              originalRunIndex,
               {
                 volatility: result.config.market.volatility,
                 drift: result.config.market.drift,
                 candleCount: result.config.market.candleCount,
               },
-              outputDir
+              outputDir,
+              targetMT
             );
             
             fs.writeFileSync(samplePath, sampleHTML, 'utf-8');
-            console.log(`已生成: ${samplePath}`);
           }
+          
+          const typeLabel = sampleType === 'best' ? '最佳' : sampleType === 'worst' ? '最差' : '中位';
+          console.log(`已生成: sample_...run${originalRunIndex + 1}_mt*.html (${typeLabel}, ${takeProfitTargets.length} 个 M_T 文件)`);
         }
       }
     }
@@ -1577,7 +1666,8 @@ export function generateSampleDetailHTML(
     drift?: number;
     candleCount: number;
   },
-  baseDir: string = ''
+  baseDir: string = '',
+  targetMT: number = 2
 ): string {
   const {
     prices,
@@ -1609,6 +1699,22 @@ export function generateSampleDetailHTML(
   const finalBaselineEquity = baselineEquityCurve?.[baselineEquityCurve.length - 1] ?? 0;
   const finalLearnedC = baselineSnapshots?.[baselineSnapshots.length - 1]?.estimatedC ?? 0;
   
+  // 反马丁账户指标（针对当前 M_T）
+  const accountSnapshotsForTarget = accountSnapshots?.get(targetMT) ?? [];
+  const finalSnapshot = accountSnapshotsForTarget[accountSnapshotsForTarget.length - 1];
+  const finalAntiMartingalePnL = finalSnapshot?.pnl ?? 0;
+  const finalRealizedPnL = finalSnapshot?.realizedPnL ?? 0;
+  const takeProfitCount = accountSnapshotsForTarget.filter(s => s.eventType === 'take_profit').length;
+  const stopLossCount = accountSnapshotsForTarget.filter(s => s.eventType === 'stop_loss').length;
+  const nonObservingSnapshots = accountSnapshotsForTarget.filter(s => !s.isObserving);
+  const maxPosition = nonObservingSnapshots.length > 0 
+    ? Math.max(...nonObservingSnapshots.map(s => s.positionSize))
+    : 0;
+  const avgPosition = nonObservingSnapshots.length > 0
+    ? nonObservingSnapshots.reduce((sum, s) => sum + s.positionSize, 0) / nonObservingSnapshots.length
+    : 0;
+  const finalStopLoss = finalSnapshot?.stopLoss ?? 0;
+  
   // ============================================
   // 2. 价格与信号图（带开平仓标记）
   // ============================================
@@ -1628,16 +1734,15 @@ export function generateSampleDetailHTML(
     : '';
   
   // ============================================
-  // 4. 投注账户曲线图（选择 M_T=2 作为示例）
+  // 4. 投注账户曲线图（使用指定的 M_T）
   // ============================================
-  const targetForChart = 2;
-  const pnlCurve = pnlCurves?.get(targetForChart);
-  const unrealizedPnLCurve = unrealizedPnLCurves?.get(targetForChart);
-  const vcCurve = vcCurves?.get(targetForChart);
-  const riskCurve = riskLineCurves?.get(targetForChart);
-  const tpMarkers = takeProfitMarkers?.get(targetForChart) ?? [];
-  const slMarkers = stopLossMarkers?.get(targetForChart) ?? [];
-  const obsEndIdx = observationEndIndices?.get(targetForChart) ?? 0;
+  const pnlCurve = pnlCurves?.get(targetMT);
+  const unrealizedPnLCurve = unrealizedPnLCurves?.get(targetMT);
+  const vcCurve = vcCurves?.get(targetMT);
+  const riskCurve = riskLineCurves?.get(targetMT);
+  const tpMarkers = takeProfitMarkers?.get(targetMT) ?? [];
+  const slMarkers = stopLossMarkers?.get(targetMT) ?? [];
+  const obsEndIdx = observationEndIndices?.get(targetMT) ?? 0;
   
   const multiplierChartSVG = (unrealizedPnLCurve && vcCurve && riskCurve)
     ? generateVCChartSVG(
@@ -1646,10 +1751,10 @@ export function generateSampleDetailHTML(
         riskCurve,
         tpMarkers,
         slMarkers,
-        targetForChart,
+        targetMT,
         900,
         280,
-        `投注账户曲线 M_T=${targetForChart}`,
+        `投注账户曲线 M_T=${targetMT}`,
         obsEndIdx,
         pnlCurve
       )
@@ -1666,10 +1771,9 @@ export function generateSampleDetailHTML(
   const baselineTable = generateBaselineTable(baselineSnapshots ?? []);
   
   // ============================================
-  // 7. 账户状态变化表（选择 M_T=2）
+  // 7. 账户状态变化表（使用指定的 M_T）
   // ============================================
-  const accountSnapshotsForTarget = accountSnapshots?.get(targetForChart) ?? [];
-  const accountTable = generateAccountSnapshotsTable(accountSnapshotsForTarget, targetForChart);
+  const accountTable = generateAccountSnapshotsTable(accountSnapshotsForTarget, targetMT);
   
   // ============================================
   // 8. K线数据表（前100条，支持CSV下载）
@@ -1684,7 +1788,7 @@ export function generateSampleDetailHTML(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>样本详情 - ${signalType} - Run #${runIndex + 1}</title>
+  <title>样本详情 - ${signalType} - Run #${runIndex + 1} - M_T=${targetMT}</title>
   ${COMMON_STYLES}
   <style>
     .scrollable-table {
@@ -1742,18 +1846,19 @@ export function generateSampleDetailHTML(
       <span>›</span>
       <a href="signal_${sanitizeFilename(marketName)}_${sanitizeFilename(signalType)}.html">${signalType}</a>
       <span>›</span>
-      <span>样本 #${runIndex + 1}</span>
+      <span>样本 #${runIndex + 1} | M_T=${targetMT}</span>
     </nav>
     
-    <h1>样本级别详细报告</h1>
+    <h1>样本级别详细报告 (M_T=${targetMT})</h1>
     <p class="subtitle">
-      ${signalType} | ${marketName} | Run #${runIndex + 1} | 
+      ${signalType} | ${marketName} | Run #${runIndex + 1} | M_T=${targetMT} |
       σ=${(config.volatility * 100).toFixed(1)}% | μ=${((config.drift ?? 0) * 100).toFixed(1)}%
     </p>
     
     <!-- 运行概览 -->
     <div class="card">
       <h2>运行概览</h2>
+      <p style="color: #666; margin-bottom: 15px;">基础交易统计</p>
       <div class="grid grid-4">
         <div class="metric-card">
           <div class="value">${config.candleCount}</div>
@@ -1772,22 +1877,62 @@ export function generateSampleDetailHTML(
           <div class="label">平均持仓周期</div>
         </div>
       </div>
-      <div class="grid grid-4" style="margin-top: 15px;">
+      
+      <p style="color: #666; margin: 20px 0 15px 0;">基准账户 (仓位=1)</p>
+      <div class="grid grid-4">
         <div class="metric-card">
           <div class="value">${(totalPnl * 100).toFixed(2)}%</div>
-          <div class="label">累计PnL (单位仓位)</div>
+          <div class="label">累计PnL</div>
         </div>
         <div class="metric-card">
           <div class="value">${(finalBaselineEquity * 100).toFixed(2)}%</div>
-          <div class="label">基准净值 (仓位=1)</div>
+          <div class="label">最终净值</div>
         </div>
         <div class="metric-card">
           <div class="value">${(finalLearnedC * 100).toFixed(4)}%</div>
           <div class="label">学习到的 C 值</div>
         </div>
         <div class="metric-card">
+          <div class="value">${(finalStopLoss * 100).toFixed(4)}%</div>
+          <div class="label">学习到的 StopLoss</div>
+        </div>
+      </div>
+      
+      <p style="color: #667eea; margin: 20px 0 15px 0; font-weight: bold;">反马丁账户 (M_T=${targetMT})</p>
+      <div class="grid grid-4">
+        <div class="metric-card" style="border-left: 4px solid #27ae60;">
+          <div class="value" style="color: ${finalAntiMartingalePnL >= 0 ? '#27ae60' : '#e74c3c'};">${(finalAntiMartingalePnL * 100).toFixed(2)}%</div>
+          <div class="label">最终总 PnL</div>
+        </div>
+        <div class="metric-card" style="border-left: 4px solid #3498db;">
+          <div class="value">${(finalRealizedPnL * 100).toFixed(2)}%</div>
+          <div class="label">已实现 PnL</div>
+        </div>
+        <div class="metric-card" style="border-left: 4px solid #27ae60;">
+          <div class="value" style="color: #27ae60;">${takeProfitCount}</div>
+          <div class="label">止盈次数</div>
+        </div>
+        <div class="metric-card" style="border-left: 4px solid #e74c3c;">
+          <div class="value" style="color: #e74c3c;">${stopLossCount}</div>
+          <div class="label">止损次数</div>
+        </div>
+      </div>
+      <div class="grid grid-4" style="margin-top: 15px;">
+        <div class="metric-card">
+          <div class="value">${maxPosition}</div>
+          <div class="label">最大仓位</div>
+        </div>
+        <div class="metric-card">
+          <div class="value">${avgPosition.toFixed(2)}</div>
+          <div class="label">平均仓位</div>
+        </div>
+        <div class="metric-card">
           <div class="value">${obsEndIdx}</div>
           <div class="label">观察期结束索引</div>
+        </div>
+        <div class="metric-card">
+          <div class="value">${takeProfitCount + stopLossCount}</div>
+          <div class="label">总轮数</div>
         </div>
       </div>
     </div>
@@ -1857,7 +2002,7 @@ export function generateSampleDetailHTML(
     <!-- 账户状态变化表 -->
     ${accountSnapshotsForTarget.length > 0 ? `
     <div class="card">
-      <h2>反马丁账户快照 M_T=${targetForChart}x (${accountSnapshotsForTarget.length} 条)</h2>
+      <h2>反马丁账户快照 M_T=${targetMT}x (${accountSnapshotsForTarget.length} 条)</h2>
       <p style="color: #666; margin-bottom: 10px;">
         显示每笔交易后账户的状态变化 | 灰色行: 观察期（实际仓位=0）
       </p>

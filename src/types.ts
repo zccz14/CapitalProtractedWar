@@ -472,6 +472,20 @@ export interface SampleRunData {
 }
 
 /**
+ * 样本元数据
+ * 
+ * 记录代表性样本的选择信息
+ */
+export interface SampleMetadata {
+  /** 原始运行索引（0-based） */
+  runIndex: number;
+  /** 基准账户最终 PnL */
+  baselinePnL: number;
+  /** 样本类型：最佳/中位/最差 */
+  sampleType: 'best' | 'median' | 'worst';
+}
+
+/**
  * 单次蒙特卡洛运行的结果
  */
 export interface MonteCarloRunResult {
@@ -481,6 +495,8 @@ export interface MonteCarloRunResult {
   signalResults: SignalEvaluationResult[];
   /** 样本数据（可选，仅用于可视化） */
   sampleData?: Map<string, SampleRunData>;  // key = signalType
+  /** 样本元数据（可选，记录代表性样本的选择信息） */
+  sampleMetadata?: Map<string, SampleMetadata>;  // key = signalType
 }
 
 // ============================================

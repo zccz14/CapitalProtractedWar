@@ -34,6 +34,7 @@ import type {
   TakeProfitTargetStats,
   SampleRunData,
   TradeRecord,
+  SampleMetadata,
 } from '../types.js';
 import { MultiAccountTracker, BaselineTracker } from '../betting/index.js';
 import { createSignalStrategy } from '../signal/index.js';
@@ -368,8 +369,8 @@ export class NewParadigmExperimentRunner {
     
     // 蒙特卡洛循环
     for (let runIndex = 0; runIndex < config.monteCarloRuns; runIndex++) {
-      // 是否记录样本数据（只记录前3次运行）
-      const recordSample = runIndex < 3;
+      // 所有运行都记录样本数据，用于后续选择代表性样本
+      const recordSample = true;
       
       // 1. 生成市场序列（每次 MC 运行一次）
       const marketConfig = {
@@ -413,12 +414,8 @@ export class NewParadigmExperimentRunner {
       const runResult: MonteCarloRunResult = {
         runIndex,
         signalResults,
+        sampleData: sampleDataMap,
       };
-      
-      // 只为前3次运行保存样本数据
-      if (recordSample) {
-        runResult.sampleData = sampleDataMap;
-      }
       
       allRunResults.push(runResult);
     }
@@ -434,9 +431,73 @@ export class NewParadigmExperimentRunner {
       monteCarloRuns: config.monteCarloRuns,
       candlesPerRun: config.market.candleCount,
       elapsedMs,
-      // 保存少量样本用于可视化
-      sampleRuns: allRunResults.slice(0, 3),
+      // 选择代表性样本用于可视化
+      sampleRuns: this.selectRepresentativeSamples(allRunResults, config),
     };
+  }
+
+  /**
+   * 为每个信号策略选择代表性样本（最佳/中位/最差）
+   * 
+   * 基于基准账户 PnL（仓位=1）进行排序选择
+   */
+  private selectRepresentativeSamples(
+    allRunResults: MonteCarloRunResult[],
+    config: ExperimentConfig
+  ): MonteCarloRunResult[] {
+    const signalTypes = config.signals.map(s => s.type);
+    
+    // 为每个信号策略计算排名
+    const signalRankings = new Map<string, { idx: number; pnl: number }[]>();
+    
+    for (const signalType of signalTypes) {
+      const runPnLs = allRunResults.map((run, idx) => {
+        const sampleData = run.sampleData?.get(signalType);
+        const baselinePnL = sampleData?.baselineEquityCurve?.slice(-1)[0] ?? 0;
+        return { idx, pnl: baselinePnL };
+      });
+      runPnLs.sort((a, b) => a.pnl - b.pnl);
+      signalRankings.set(signalType, runPnLs);
+    }
+    
+    // 收集所有需要的运行索引及其对应的样本类型
+    // key = runIndex, value = Map<signalType, sampleType>
+    const selectedIndicesMap = new Map<number, Map<string, 'best' | 'median' | 'worst'>>();
+    
+    for (const signalType of signalTypes) {
+      const rankings = signalRankings.get(signalType)!;
+      const n = rankings.length;
+      
+      const worstIdx = rankings[0].idx;
+      const medianIdx = rankings[Math.floor(n / 2)].idx;
+      const bestIdx = rankings[n - 1].idx;
+      
+      // 记录每个索引对应的样本类型
+      for (const [idx, type] of [[worstIdx, 'worst'], [medianIdx, 'median'], [bestIdx, 'best']] as const) {
+        if (!selectedIndicesMap.has(idx)) {
+          selectedIndicesMap.set(idx, new Map());
+        }
+        selectedIndicesMap.get(idx)!.set(signalType, type);
+      }
+    }
+    
+    // 构建结果，添加元数据
+    return Array.from(selectedIndicesMap.entries()).map(([idx, typeMap]) => {
+      const run = allRunResults[idx];
+      const metadata = new Map<string, SampleMetadata>();
+      
+      for (const [signalType, sampleType] of typeMap) {
+        const sampleData = run.sampleData?.get(signalType);
+        const baselinePnL = sampleData?.baselineEquityCurve?.slice(-1)[0] ?? 0;
+        metadata.set(signalType, {
+          runIndex: idx,
+          baselinePnL,
+          sampleType,
+        });
+      }
+      
+      return { ...run, sampleMetadata: metadata };
+    });
   }
 
   /**
