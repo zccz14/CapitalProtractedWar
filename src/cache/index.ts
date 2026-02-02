@@ -294,6 +294,7 @@ export function calculateStats(values: number[]): {
   min: number | null;
   max: number | null;
   p25: number | null;
+  p50: number | null;
   p75: number | null;
   p95: number | null;
 } {
@@ -305,6 +306,7 @@ export function calculateStats(values: number[]): {
       min: null,
       max: null,
       p25: null,
+      p50: null,
       p75: null,
       p95: null,
     };
@@ -317,7 +319,7 @@ export function calculateStats(values: number[]): {
   const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / n;
   const std = Math.sqrt(variance);
 
-  const percentile = (p: number) => {
+  const percentile = (p: number): number => {
     const idx = (p / 100) * (n - 1);
     const lower = Math.floor(idx);
     const upper = Math.ceil(idx);
@@ -332,6 +334,7 @@ export function calculateStats(values: number[]): {
     min: sorted[0],
     max: sorted[n - 1],
     p25: percentile(25),
+    p50: percentile(50),
     p75: percentile(75),
     p95: percentile(95),
   };

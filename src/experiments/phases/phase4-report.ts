@@ -17,8 +17,10 @@ import type { FullExperimentConfig } from '../../cache/types.js';
 import type {
   ExperimentResult,
   AggregatedSignalResult,
+  AggregatedTakeProfitStats,
   SampleRunData,
   MonteCarloRunResult,
+  AccountSnapshot,
 } from '../../types.js';
 import { saveReportSuite, type ReportSuite } from '../../visualization/index.js';
 
@@ -75,7 +77,7 @@ export async function runPhase4(options: Phase4Options): Promise<Phase4Result> {
         const aggResult = aggFile.result;
 
         // 转换为 AggregatedSignalResult 格式
-        const takeProfitStats = new Map<number, any>();
+        const takeProfitStats = new Map<number, AggregatedTakeProfitStats>();
         for (const stat of aggResult.takeProfitStats) {
           takeProfitStats.set(stat.targetMultiplier, {
             targetMultiplier: stat.targetMultiplier,
@@ -202,26 +204,28 @@ export async function runPhase4(options: Phase4Options): Promise<Phase4Result> {
 /**
  * 将 JSON 转换回 SampleRunData 格式
  */
-function convertJSONToSampleData(json: Record<string, any>): SampleRunData {
+function convertJSONToSampleData(json: Record<string, unknown>): SampleRunData {
   return {
-    prices: json.prices,
-    realizedPnLCurves: objectToMap(json.realizedPnLCurves),
-    unrealizedPnLCurves: objectToMap(json.unrealizedPnLCurves),
-    pnlCurves: objectToMap(json.pnlCurves),
-    riskLineCurves: objectToMap(json.riskLineCurves),
-    vcCurves: objectToMap(json.vcCurves),
-    positionCurves: objectToMap(json.positionCurves),
-    takeProfitMarkers: objectToMap(json.takeProfitMarkers),
-    stopLossMarkers: objectToMap(json.stopLossMarkers),
-    observationEndIndices: objectToMap(json.observationEndIndices),
-    estimatedCCurves: objectToMap(json.estimatedCCurves),
-    stopLossCurves: objectToMap(json.stopLossCurves),
-    candles: json.candles,
-    signals: json.signals,
-    trades: json.trades,
-    baselineSnapshots: json.baselineSnapshots,
-    baselineEquityCurve: json.baselineEquityCurve,
-    accountSnapshots: json.accountSnapshots ? objectToMap(json.accountSnapshots) : undefined,
+    prices: json.prices as number[],
+    realizedPnLCurves: objectToMap(json.realizedPnLCurves as Record<string, number[]>),
+    unrealizedPnLCurves: objectToMap(json.unrealizedPnLCurves as Record<string, number[]>),
+    pnlCurves: objectToMap(json.pnlCurves as Record<string, number[]>),
+    riskLineCurves: objectToMap(json.riskLineCurves as Record<string, number[]>),
+    vcCurves: objectToMap(json.vcCurves as Record<string, number[]>),
+    positionCurves: objectToMap(json.positionCurves as Record<string, number[]>),
+    takeProfitMarkers: objectToMap(json.takeProfitMarkers as Record<string, number[]>),
+    stopLossMarkers: objectToMap(json.stopLossMarkers as Record<string, number[]>),
+    observationEndIndices: objectToMap(json.observationEndIndices as Record<string, number>),
+    estimatedCCurves: objectToMap(json.estimatedCCurves as Record<string, number[]>),
+    stopLossCurves: objectToMap(json.stopLossCurves as Record<string, number[]>),
+    candles: json.candles as SampleRunData['candles'],
+    signals: json.signals as SampleRunData['signals'],
+    trades: json.trades as SampleRunData['trades'],
+    baselineSnapshots: json.baselineSnapshots as SampleRunData['baselineSnapshots'],
+    baselineEquityCurve: json.baselineEquityCurve as number[],
+    accountSnapshots: json.accountSnapshots
+      ? objectToMap(json.accountSnapshots as Record<string, AccountSnapshot[]>)
+      : undefined,
   };
 }
 

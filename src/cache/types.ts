@@ -87,6 +87,7 @@ export interface AggregatedTakeProfitStatsSummary {
     min: number | null;
     max: number | null;
     p25: number | null;
+    p50: number | null;
     p75: number | null;
     p95: number | null;
   };

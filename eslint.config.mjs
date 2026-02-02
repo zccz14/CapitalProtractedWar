@@ -56,7 +56,6 @@ export default tseslint.config(
       '@typescript-eslint/no-non-null-assertion': 'warn',
 
       // 代码质量规则
-      'no-console': 'warn',
       eqeqeq: ['error', 'always'],
       'prefer-const': 'error',
       'no-duplicate-imports': 'error',

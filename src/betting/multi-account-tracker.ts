@@ -18,6 +18,7 @@
 
 import type {
   TakeProfitTargetStats,
+  TakeProfitEvent,
   BettingStrategyConfig,
   RiskControlStats,
   AccountSnapshot,
@@ -338,7 +339,10 @@ export class MultiAccountTracker {
   /**
    * 计算单个 M_T 的统计数据
    */
-  private calculateStats(targetMultiplier: number, events: any[]): TakeProfitTargetStats {
+  private calculateStats(
+    targetMultiplier: number,
+    events: TakeProfitEvent[]
+  ): TakeProfitTargetStats {
     const roundCount = events.length;
 
     if (roundCount === 0) {
@@ -357,7 +361,7 @@ export class MultiAccountTracker {
       };
     }
 
-    const intervals = events.map((e: any) => e.intervalCandles);
+    const intervals = events.map((e) => e.intervalCandles);
     const sorted = [...intervals].sort((a, b) => a - b);
 
     const mean = intervals.reduce((sum: number, v: number) => sum + v, 0) / roundCount;

@@ -299,7 +299,9 @@ export function createPositionManager(
       return new FixedPositionManager(fixedParams?.fixedSize, fixedParams?.floorMultiplier);
     }
 
-    default:
-      throw new Error(`Unknown position manager type: ${(config as any).type}`);
+    default: {
+      const exhaustiveCheck: never = config.type;
+      throw new Error(`Unknown position manager type: ${exhaustiveCheck}`);
+    }
   }
 }

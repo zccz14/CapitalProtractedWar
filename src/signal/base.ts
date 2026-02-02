@@ -28,6 +28,9 @@ export type StrategyCategory =
   | 'composite' // 组合策略
   | 'other'; // 其他
 
+/** 策略参数值类型 */
+export type StrategyParamValue = string | number | boolean;
+
 /** 策略元信息 */
 export interface StrategyMeta {
   /** 策略类型标识 */
@@ -39,7 +42,7 @@ export interface StrategyMeta {
   /** 策略分类 */
   category: StrategyCategory;
   /** 默认参数 */
-  defaultParams: Record<string, any>;
+  defaultParams: object;
   /** 参数描述 */
   paramDescriptions?: Record<string, string>;
 }
@@ -48,10 +51,8 @@ export interface StrategyMeta {
 // 策略基类
 // ============================================
 
-/** 基础策略参数 */
-export interface BaseStrategyParams {
-  [key: string]: any;
-}
+/** 基础策略参数 - 允许任意字符串键 */
+export type BaseStrategyParams = Record<string, StrategyParamValue>;
 
 /**
  * 信号策略抽象基类
@@ -62,7 +63,7 @@ export interface BaseStrategyParams {
  * - 参数验证
  */
 export abstract class BaseStrategy<
-  P extends BaseStrategyParams = BaseStrategyParams,
+  P extends object = BaseStrategyParams,
 > implements SignalStrategy {
   abstract readonly type: SignalStrategyType;
 
@@ -152,7 +153,9 @@ export abstract class BaseStrategy<
 // ============================================
 
 /** 策略构造函数类型 */
-export type StrategyConstructor<P = any> = new (params?: Partial<P>) => SignalStrategy;
+export type StrategyConstructor<P = BaseStrategyParams> = new (
+  params?: Partial<P>
+) => SignalStrategy;
 
 /** 注册的策略信息 */
 interface RegisteredStrategy {
@@ -253,7 +256,7 @@ export type ExtractParams<T> = T extends BaseStrategy<infer P> ? P : never;
 /** 策略配置生成器 */
 export function strategyConfig<T extends SignalStrategyType>(
   type: T,
-  params?: Record<string, any>
+  params?: Record<string, StrategyParamValue>
 ): SignalStrategyConfig {
   return { type, params };
 }
