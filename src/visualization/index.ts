@@ -507,7 +507,7 @@ function generatePriceChartSVG(
 
 function generateVCChartSVG(
   vcCurve: number[],
-  pnlCurve: number[],
+  unrealizedPnLCurve: number[],
   riskLineCurve: number[],
   takeProfitMarkers: number[],
   stopLossMarkers: number[],
@@ -515,7 +515,8 @@ function generateVCChartSVG(
   width: number = 800,
   height: number = 250,
   title?: string,
-  observationEndIndex?: number
+  observationEndIndex?: number,
+  pnlCurve?: number[]
 ): string {
   if (vcCurve.length === 0) {
     return `<svg width="${width}" height="80">
@@ -530,11 +531,12 @@ function generateVCChartSVG(
   // 降采样以提高性能（最多1000个点）
   const sampleRate = Math.max(1, Math.floor(vcCurve.length / 1000));
   const sampledVC = vcCurve.filter((_, i) => i % sampleRate === 0);
-  const sampledPnL = pnlCurve.filter((_, i) => i % sampleRate === 0);
+  const sampledUnrealizedPnL = unrealizedPnLCurve.filter((_, i) => i % sampleRate === 0);
   const sampledRiskLine = riskLineCurve.filter((_, i) => i % sampleRate === 0);
+  const sampledPnL = pnlCurve?.filter((_, i) => i % sampleRate === 0);
   
-  // 计算 Y 轴范围（包含 PnL、RiskLine、VC、止盈线）
-  const allValues = [...sampledVC, ...sampledPnL, ...sampledRiskLine, targetMultiplier, 0];
+  // 计算 Y 轴范围（包含 UnrealizedPnL、RiskLine、VC、PnL、止盈线）
+  const allValues = [...sampledVC, ...sampledUnrealizedPnL, ...sampledRiskLine, ...(sampledPnL ?? []), targetMultiplier, 0];
   const minY = Math.min(...allValues);
   const maxY = Math.max(...allValues);
   const yRange = maxY - minY || 1;
@@ -547,9 +549,16 @@ function generateVCChartSVG(
   const vcPoints = sampledVC.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`);
   const vcPathD = `M ${vcPoints.join(' L ')}`;
   
-  // 生成 PnL 曲线路径（绿色）
-  const pnlPoints = sampledPnL.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`);
-  const pnlPathD = `M ${pnlPoints.join(' L ')}`;
+  // 生成 UnrealizedPnL 曲线路径（绿色虚线）
+  const unrealizedPnLPoints = sampledUnrealizedPnL.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`);
+  const unrealizedPnLPathD = `M ${unrealizedPnLPoints.join(' L ')}`;
+  
+  // 生成 PnL 曲线路径（绿色实线）
+  let pnlPathD = '';
+  if (sampledPnL && sampledPnL.length > 0) {
+    const pnlPoints = sampledPnL.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`);
+    pnlPathD = `M ${pnlPoints.join(' L ')}`;
+  }
   
   // 生成 RiskLine 曲线路径（红色）
   const riskLinePoints = sampledRiskLine.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`);
@@ -647,8 +656,11 @@ function generateVCChartSVG(
   <!-- RiskLine 曲线（红色） -->
   <path d="${riskLinePathD}" fill="none" stroke="#e74c3c" stroke-width="1.5"/>
   
-  <!-- PnL 曲线（绿色） -->
-  <path d="${pnlPathD}" fill="none" stroke="#27ae60" stroke-width="1.5" stroke-dasharray="3,2"/>
+  <!-- UnrealizedPnL 曲线（浅绿色虚线） -->
+  <path d="${unrealizedPnLPathD}" fill="none" stroke="#2ecc71" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.7"/>
+  
+  <!-- PnL 曲线（绿色实线） -->
+  ${pnlPathD ? `<path d="${pnlPathD}" fill="none" stroke="#27ae60" stroke-width="2"/>` : ''}
   
   <!-- VC 填充区域 -->
   <path d="${vcPathD} L ${width - padding.right},${zeroY} L ${padding.left},${zeroY} Z" fill="url(#vcGrad${targetMultiplier})"/>
@@ -669,13 +681,16 @@ function generateVCChartSVG(
   <!-- 图例 -->
   <g transform="translate(${padding.left + 10}, ${padding.top + 10})">
     <line x1="0" y1="0" x2="20" y2="0" stroke="#3498db" stroke-width="2"/>
-    <text x="25" y="4" font-size="9" fill="#666">VC (风险资金)</text>
+    <text x="25" y="4" font-size="9" fill="#666">VC</text>
     
-    <line x1="100" y1="0" x2="120" y2="0" stroke="#27ae60" stroke-width="1.5" stroke-dasharray="3,2"/>
-    <text x="125" y="4" font-size="9" fill="#666">PnL</text>
+    <line x1="55" y1="0" x2="75" y2="0" stroke="#27ae60" stroke-width="2"/>
+    <text x="80" y="4" font-size="9" fill="#666">PnL</text>
     
-    <line x1="170" y1="0" x2="190" y2="0" stroke="#e74c3c" stroke-width="1.5"/>
-    <text x="195" y="4" font-size="9" fill="#666">RiskLine</text>
+    <line x1="115" y1="0" x2="135" y2="0" stroke="#2ecc71" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.7"/>
+    <text x="140" y="4" font-size="9" fill="#666">UnrealizedPnL</text>
+    
+    <line x1="220" y1="0" x2="240" y2="0" stroke="#e74c3c" stroke-width="1.5"/>
+    <text x="245" y="4" font-size="9" fill="#666">RiskLine</text>
   </g>
 </svg>`;
 }
@@ -893,20 +908,21 @@ function generateSignalDetailHTML(
       `;
       
       // 资金曲线图（选取几个关键的 M_T）
-      const chartTargets = [2, 4, 8, 16].filter(t => sampleData.pnlCurves.has(t));
+      const chartTargets = [2, 4, 8, 16].filter(t => sampleData.unrealizedPnLCurves.has(t));
       if (chartTargets.length > 0) {
         const multiplierCharts = chartTargets.map(target => {
-          const pnlCurve = sampleData.pnlCurves.get(target);
+          const unrealizedPnLCurve = sampleData.unrealizedPnLCurves.get(target);
           const riskLineCurve = sampleData.riskLineCurves?.get(target);
           const vcCurve = sampleData.vcCurves?.get(target);
+          const pnlCurve = sampleData.pnlCurves?.get(target);
           const tpMarkers = sampleData.takeProfitMarkers.get(target) || [];
           const slMarkers = sampleData.stopLossMarkers?.get(target) || [];
           const obsEndIdx = sampleData.observationEndIndices?.get(target);
           
-          if (pnlCurve && riskLineCurve && vcCurve) {
+          if (unrealizedPnLCurve && riskLineCurve && vcCurve) {
             return `<div class="chart-container">${generateVCChartSVG(
               vcCurve,
-              pnlCurve,
+              unrealizedPnLCurve,
               riskLineCurve,
               tpMarkers,
               slMarkers,
@@ -914,7 +930,8 @@ function generateSignalDetailHTML(
               440,
               250,
               undefined,
-              obsEndIdx
+              obsEndIdx,
+              pnlCurve
             )}</div>`;
           }
           return '';
@@ -924,8 +941,8 @@ function generateSignalDetailHTML(
           <div class="card">
             <h2>投注账户曲线（样本运行 #1）</h2>
             <p style="color: #666; margin-bottom: 15px;">
-              蓝色曲线: VC (风险资金) | 绿色虚线: PnL (累计盈亏) | 红色实线: RiskLine (风控线)<br/>
-              绿点: 止盈事件 (VC≥M_T) | 红叉: 止损事件 (VC≤0) | 灰色区域: 观察期
+              蓝色: VC (风险资金) | 绿色实线: PnL (总盈亏) | 绿色虚线: UnrealizedPnL | 红色: RiskLine<br/>
+              绿点: 止盈事件 (UnrealizedPnL≥M_T) | 红叉: 止损事件 (VC≤0) | 灰色区域: 观察期
             </p>
             <div class="grid grid-2">
               ${multiplierCharts.join('')}
@@ -1576,6 +1593,7 @@ export function generateSampleDetailHTML(
     riskLineCurves,
     observationEndIndices,
     pnlCurves,
+    unrealizedPnLCurves,
   } = sampleData;
   
   // ============================================
@@ -1614,16 +1632,17 @@ export function generateSampleDetailHTML(
   // ============================================
   const targetForChart = 2;
   const pnlCurve = pnlCurves?.get(targetForChart);
+  const unrealizedPnLCurve = unrealizedPnLCurves?.get(targetForChart);
   const vcCurve = vcCurves?.get(targetForChart);
   const riskCurve = riskLineCurves?.get(targetForChart);
   const tpMarkers = takeProfitMarkers?.get(targetForChart) ?? [];
   const slMarkers = stopLossMarkers?.get(targetForChart) ?? [];
   const obsEndIdx = observationEndIndices?.get(targetForChart) ?? 0;
   
-  const multiplierChartSVG = (pnlCurve && vcCurve && riskCurve)
+  const multiplierChartSVG = (unrealizedPnLCurve && vcCurve && riskCurve)
     ? generateVCChartSVG(
         vcCurve,
-        pnlCurve,
+        unrealizedPnLCurve,
         riskCurve,
         tpMarkers,
         slMarkers,
@@ -1631,7 +1650,8 @@ export function generateSampleDetailHTML(
         900,
         280,
         `投注账户曲线 M_T=${targetForChart}`,
-        obsEndIdx
+        obsEndIdx,
+        pnlCurve
       )
     : '';
   

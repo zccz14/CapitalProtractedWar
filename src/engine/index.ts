@@ -285,6 +285,8 @@ export class NewParadigmBacktestEngine {
     if (recordSample) {
       sampleData = {
         prices: candles.map(c => c.close),
+        realizedPnLCurves: tracker.getRealizedPnLCurves(),
+        unrealizedPnLCurves: tracker.getUnrealizedPnLCurves(),
         pnlCurves: tracker.getPnLCurves(),
         riskLineCurves: tracker.getRiskLineCurves(),
         vcCurves: tracker.getVCCurves(),

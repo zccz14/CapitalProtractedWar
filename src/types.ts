@@ -255,17 +255,26 @@ export interface TakeProfitTargetStats {
  * 虚拟账户状态（用于多账户并行追踪）
  * 
  * 新风控框架核心状态：
- * - PnL(t): 投注账户累计盈亏
- * - RiskLine(t): 风控线，每K线下降 C(t)
- * - VC(t) = PnL(t) - RiskLine(t): 风险资金
+ * - RealizedPnL(t): 已实现盈亏（止盈/止损时锁定）
+ * - UnrealizedPnL(t): 未实现盈亏（当前轮次累计，止盈/止损时清零）
+ * - PnL(t) = RealizedPnL(t) + UnrealizedPnL(t): 总盈亏
+ * - RiskLine(t): 风控线，每K线下降 C(t)，止盈/止损后重置为0
+ * - VC(t) = UnrealizedPnL(t) - RiskLine(t): 风险资金
  * - Position(t): 仓位（非负整数）
+ * 
+ * 止盈条件：UnrealizedPnL(t) >= M_T
+ * 止损条件：VC(t) <= 0
  */
 export interface VirtualAccountState {
-  /** 投注账户累计盈亏 PnL(t) */
+  /** 已实现盈亏 RealizedPnL(t) */
+  realizedPnL: number;
+  /** 未实现盈亏 UnrealizedPnL(t) */
+  unrealizedPnL: number;
+  /** 总盈亏 PnL(t) = RealizedPnL + UnrealizedPnL */
   pnl: number;
   /** 风控线 RiskLine(t) */
   riskLine: number;
-  /** 风险资金 VC(t) = PnL - RiskLine */
+  /** 风险资金 VC(t) = UnrealizedPnL - RiskLine */
   ventureCapital: number;
   /** 当前仓位大小 Position(t)（非负整数） */
   positionSize: number;
@@ -362,10 +371,15 @@ export interface BaselineSnapshot {
  * 记录每笔交易后的账户状态变化，用于审计
  * 
  * 核心变量：
- * - PnL(t): 投注账户累计盈亏
+ * - RealizedPnL(t): 已实现盈亏
+ * - UnrealizedPnL(t): 未实现盈亏
+ * - PnL(t) = RealizedPnL + UnrealizedPnL: 总盈亏
  * - RiskLine(t): 风控线
- * - VC(t) = PnL(t) - RiskLine(t): 风险资金
+ * - VC(t) = UnrealizedPnL(t) - RiskLine(t): 风险资金
  * - Position(t) = StopLoss > 0 ? max(1, floor(VC/StopLoss)) : 0
+ * 
+ * 止盈条件：UnrealizedPnL >= M_T
+ * 止损条件：VC <= 0
  */
 export interface AccountSnapshot {
   /** K线索引 */
@@ -376,11 +390,15 @@ export interface AccountSnapshot {
   eventType: 'trade_close' | 'take_profit' | 'stop_loss' | 'observing';
   
   // 核心风控变量
-  /** 投注账户累计盈亏 PnL(t) */
+  /** 已实现盈亏 RealizedPnL(t) */
+  realizedPnL: number;
+  /** 未实现盈亏 UnrealizedPnL(t) */
+  unrealizedPnL: number;
+  /** 总盈亏 PnL(t) = RealizedPnL + UnrealizedPnL */
   pnl: number;
   /** 风控线 RiskLine(t) */
   riskLine: number;
-  /** 风险资金 VC(t) = PnL - RiskLine */
+  /** 风险资金 VC(t) = UnrealizedPnL - RiskLine */
   ventureCapital: number;
   /** 基准止损额 StopLoss(t) */
   stopLoss: number;
@@ -402,15 +420,21 @@ export interface AccountSnapshot {
  * 样本数据 - 用于可视化
  * 
  * 新风控框架的核心曲线：
- * - PnL 曲线：投注账户累计盈亏
- * - RiskLine 曲线：风控线（每K线下降 C）
- * - VC 曲线：风险资金 = PnL - RiskLine
+ * - RealizedPnL 曲线：已实现盈亏
+ * - UnrealizedPnL 曲线：未实现盈亏（当前轮次）
+ * - PnL 曲线：总盈亏 = RealizedPnL + UnrealizedPnL
+ * - RiskLine 曲线：风控线（每K线下降 C，止盈/止损后重置为0）
+ * - VC 曲线：风险资金 = UnrealizedPnL - RiskLine
  * - Position 曲线：仓位大小
  */
 export interface SampleRunData {
   /** 价格序列（收盘价） */
   prices: number[];
-  /** PnL 曲线（针对特定 M_T） */
+  /** 已实现盈亏曲线（针对特定 M_T） */
+  realizedPnLCurves: Map<number, number[]>;
+  /** 未实现盈亏曲线（针对特定 M_T） */
+  unrealizedPnLCurves: Map<number, number[]>;
+  /** 总盈亏 PnL 曲线（针对特定 M_T） */
   pnlCurves: Map<number, number[]>;
   /** 风控线曲线（针对特定 M_T） */
   riskLineCurves: Map<number, number[]>;
