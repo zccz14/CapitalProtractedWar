@@ -1695,6 +1695,12 @@ export function generateSampleDetailHTML(
     .scrollable-table table {
       margin: 0;
     }
+    .scrollable-table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: #3498db;
+    }
     .trade-win { background: rgba(39, 174, 96, 0.1); }
     .trade-loss { background: rgba(231, 76, 60, 0.1); }
     .observing { background: rgba(128, 128, 128, 0.15); }
@@ -2117,6 +2123,16 @@ function generateAccountSnapshotsTable(snapshots: AccountSnapshot[], targetMulti
     return '<p style="color: #999; text-align: center;">无账户快照</p>';
   }
   
+  // 格式化百分比数值，带颜色
+  const formatPnl = (value: number, isObserving = false): string => {
+    if (value === 0 && isObserving) {
+      return '<span style="color: #888;">0</span>';
+    }
+    const color = value >= 0 ? '#27ae60' : '#e74c3c';
+    const sign = value >= 0 ? '+' : '';
+    return `<span style="color: ${color};">${sign}${(value * 100).toFixed(3)}%</span>`;
+  };
+
   const rows = snapshots.map(s => {
     let rowClass = '';
     let eventText = '';
@@ -2136,12 +2152,6 @@ function generateAccountSnapshotsTable(snapshots: AccountSnapshot[], targetMulti
         eventText = '交易';
     }
     
-    const actualPnlText = s.actualPnl === 0 && s.isObserving
-      ? '<span style="color: #888;">0 (观察期)</span>'
-      : (s.actualPnl >= 0 
-        ? `<span style="color: #27ae60;">+${(s.actualPnl * 100).toFixed(3)}%</span>`
-        : `<span style="color: #e74c3c;">${(s.actualPnl * 100).toFixed(3)}%</span>`);
-    
     const vcText = s.ventureCapital >= 0
       ? `<span style="color: #27ae60;">${s.ventureCapital.toFixed(4)}</span>`
       : `<span style="color: #e74c3c;">${s.ventureCapital.toFixed(4)}</span>`;
@@ -2150,12 +2160,14 @@ function generateAccountSnapshotsTable(snapshots: AccountSnapshot[], targetMulti
       <td>${s.tradeIndex}</td>
       <td>${s.candleIndex}</td>
       <td>${eventText}</td>
-      <td>${(s.pnl * 100).toFixed(3)}%</td>
+      <td>${formatPnl(s.pnlPercent, s.isObserving)}</td>
+      <td>${s.positionSize}</td>
+      <td>${formatPnl(s.actualPnl, s.isObserving)}</td>
+      <td>${formatPnl(s.unrealizedPnL)}</td>
+      <td>${formatPnl(s.realizedPnL)}</td>
+      <td>${formatPnl(s.pnl)}</td>
       <td>${s.riskLine.toFixed(4)}</td>
       <td>${vcText}</td>
-      <td>${s.positionSize}</td>
-      <td>${(s.pnlPercent * 100).toFixed(3)}%</td>
-      <td>${actualPnlText}</td>
       <td>${s.estimatedC.toFixed(6)}</td>
       <td>${s.stopLoss.toFixed(4)}</td>
     </tr>`;
@@ -2167,12 +2179,14 @@ function generateAccountSnapshotsTable(snapshots: AccountSnapshot[], targetMulti
         <th>交易#</th>
         <th>K线</th>
         <th>事件</th>
-        <th>PnL</th>
+        <th>单笔PnL</th>
+        <th>仓位</th>
+        <th>本笔盈亏</th>
+        <th>未实现盈亏</th>
+        <th>已实现盈亏</th>
+        <th>总盈亏</th>
         <th>风控线</th>
         <th>VC</th>
-        <th>仓位</th>
-        <th>单位PnL</th>
-        <th>实际PnL</th>
         <th>C值</th>
         <th>StopLoss</th>
       </tr>
