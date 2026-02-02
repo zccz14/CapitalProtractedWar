@@ -31,6 +31,7 @@ const SIGNAL_STRATEGIES: { type: SignalStrategyType; params?: Record<string, any
   { type: 'trend_following', params: { fastPeriod: 5, slowPeriod: 20 } },
   { type: 'mean_reversion', params: { period: 20, threshold: 2 } },
   { type: 'breakout', params: { period: 20, threshold: 0 } },
+  { type: 'boll_reversion', params: { period: 20, stdDev: 2 } },
   { type: 'random', params: { tradeProbability: 0.1, avgHoldingPeriod: 10, seed: 42 } },
 ];
 

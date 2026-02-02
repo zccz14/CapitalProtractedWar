@@ -95,7 +95,8 @@ export type SignalStrategyType =
   | 'mean_reversion'       // 均值回归
   | 'breakout'             // 突破策略
   | 'random'               // 随机策略 (对照组)
-  | 'adaptive_volatility'; // 自适应波动率策略
+  | 'adaptive_volatility'  // 自适应波动率策略
+  | 'boll_reversion';      // 布林带回归策略
 
 export interface SignalStrategyConfig {
   type: SignalStrategyType;

@@ -16,3 +16,4 @@ export {
   type VolatilityState,
   type AdaptiveMode,
 } from './adaptive-volatility.js';
+export { BollReversionStrategy, type BollReversionParams } from './boll-reversion.js';
