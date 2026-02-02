@@ -94,6 +94,7 @@ export type SignalStrategyType =
   | 'trend_following'      // 趋势跟踪 (动量策略)
   | 'mean_reversion'       // 均值回归
   | 'breakout'             // 突破策略
+  | 'breakout_4'           // 4根K线突破策略
   | 'random'               // 随机策略 (对照组)
   | 'adaptive_volatility'  // 自适应波动率策略
   | 'boll_reversion';      // 布林带回归策略

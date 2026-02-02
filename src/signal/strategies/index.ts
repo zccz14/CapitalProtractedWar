@@ -8,6 +8,7 @@
 export { TrendFollowingStrategy, type TrendFollowingParams } from './trend-following.js';
 export { MeanReversionStrategy, type MeanReversionParams } from './mean-reversion.js';
 export { BreakoutStrategy, type BreakoutParams } from './breakout.js';
+export { Breakout4Strategy, type Breakout4Params } from './breakout-4.js';
 export { RandomStrategy, type RandomParams } from './random.js';
 export { 
   AdaptiveVolatilityStrategy, 

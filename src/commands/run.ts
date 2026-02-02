@@ -14,6 +14,8 @@ function getSignalParams(signalType: string, seed?: number): Record<string, numb
       return { period: 20, deviationThreshold: 0.02 };
     case 'breakout':
       return { lookbackPeriod: 20, breakoutThreshold: 0.01 };
+    case 'breakout_4':
+      return { lookbackCount: 4 };
     case 'random':
     default:
       return { 
@@ -45,7 +47,7 @@ export class RunCommand extends Command {
   });
 
   signal = Option.String('-s,--signal', 'random', {
-    description: '信号策略 (trend_following|mean_reversion|breakout|random)',
+    description: '信号策略 (trend_following|mean_reversion|breakout|breakout_4|random)',
   });
 
   candles = Option.String('-c,--candles', '2000', {
