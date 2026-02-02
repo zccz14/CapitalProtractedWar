@@ -11,13 +11,18 @@
  * - 投注账户（MultiAccountTracker）：参考基准账户的 C 和 StopLoss
  * - 成交价格：使用下一根K线开盘价（非当前收盘价）
  * - 观察期：C=0 或 StopLoss=0 时为观察期，Position=0
+ * - 盘中检查：持仓期间每根K线检查止盈/止损
  * 
  * 核心公式：
  * - C(t) = max(亏损额/交易时间)
  * - StopLoss(t) = 历史单笔最大浮亏
  * - RiskLine(t+1) = RiskLine(t) - C(t)  // 每K线下降
- * - VC(t) = PnL(t) - RiskLine(t)
+ * - VC(t) = UnrealizedPnL(t) - RiskLine(t)
  * - Position(t) = StopLoss > 0 ? max(1, floor(VC/StopLoss)) : 0
+ * 
+ * 止盈/止损规则（盘中触发）：
+ * - 止盈：持仓期间最高浮盈 >= M_T，RealizedPnL += M_T
+ * - 止损：持仓期间 VC <= 0，UnrealizedPnL 限制到 RiskLine
  */
 
 import type { 
@@ -76,7 +81,7 @@ export class NewParadigmBacktestEngine {
     // ============================================
     
     /** 当前持仓：1=多, 0=空仓, -1=空 */
-    let currentPosition = 0;
+    let currentPosition: 0 | 1 | -1 = 0;
     
     /** 开仓价格 */
     let entryPrice: number | null = null;
@@ -126,6 +131,43 @@ export class NewParadigmBacktestEngine {
       tracker.updateRiskLineForAllAccounts(i, currentC);
       
       // ============================================
+      // 步骤0.5：盘中检查止盈/止损（持仓期间）
+      // ============================================
+      if (currentPosition !== 0 && entryPrice !== null && entryIndex !== null) {
+        const intradayResults = tracker.checkIntradayForAllAccounts(
+          currentPosition as 1 | -1,
+          entryPrice,
+          candle.high,
+          candle.low,
+          i,
+          totalTradeCount,
+          currentC,
+          baseline.getStopLoss()
+        );
+        
+        // 处理各账户的盘中止盈/止损
+        for (const [target, result] of intradayResults) {
+          if (result.takeProfitTriggered) {
+            tracker.processIntradayTakeProfitForAccount(
+              target,
+              i,
+              totalTradeCount,
+              currentC,
+              baseline.getStopLoss()
+            );
+          } else if (result.stopLossTriggered) {
+            tracker.processIntradayStopLossForAccount(
+              target,
+              i,
+              totalTradeCount,
+              currentC,
+              baseline.getStopLoss()
+            );
+          }
+        }
+      }
+      
+      // ============================================
       // 步骤1：处理上一根K线的待执行信号（使用当前K线开盘价成交）
       // ============================================
       if (pendingSignal !== null && pendingSignalIndex !== null) {
@@ -148,7 +190,7 @@ export class NewParadigmBacktestEngine {
           // 先更新基准账户（计算 C 值和 StopLoss）
           baseline.processTradeResult(pnlPercent, i, holdingPeriod, totalTradeCount, maxDrawdown);
           
-          // 再更新投注账户
+          // 再更新投注账户（处理未触发盘中止盈/止损的账户）
           tracker.processTradeResult(
             pnlPercent,
             i,
@@ -185,7 +227,7 @@ export class NewParadigmBacktestEngine {
           // 开仓前准备仓位
           tracker.preparePositionForAllAccounts(baseline.getStopLoss());
           
-          currentPosition = pendingSignal;
+          currentPosition = pendingSignal as 1 | -1;
           entryPrice = executionPrice;
           entryIndex = i;
           entrySignalIndex = pendingSignalIndex;

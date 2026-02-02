@@ -7,21 +7,27 @@
  * 3. 计算仓位 Position = StopLoss > 0 ? max(1, floor(VC/StopLoss)) : 0
  * 
  * 核心变量：
- * - RealizedPnL(t): 已实现盈亏（止盈/止损时锁定）
- * - UnrealizedPnL(t): 未实现盈亏（当前轮次累计，止盈/止损时清零）
+ * - RealizedPnL(t): 已实现盈亏（止盈时锁定）
+ * - UnrealizedPnL(t): 未实现盈亏（当前轮次累计）
  * - PnL(t) = RealizedPnL(t) + UnrealizedPnL(t): 总盈亏
- * - RiskLine(t): 风控线，每K线下降 C(t)，止盈/止损后重置为0
+ * - RiskLine(t): 风控线，每K线下降 C(t)，止盈后重置为0
  * - VC(t) = UnrealizedPnL(t) - RiskLine(t): 风险资金
  * - Position(t): 仓位（非负整数）
  * 
- * 事件触发：
- * - 止盈：UnrealizedPnL(t) >= M_T
- * - 止损：VC(t) <= 0
+ * 事件触发（盘中检查）：
+ * - 止盈：持仓期间最高浮盈 >= M_T（做多用最高价，做空用最低价）
+ * - 止损：持仓期间 VC <= 0（做多用最低价，做空用最高价）
  * 
- * 止盈/止损后：
- * - RealizedPnL += UnrealizedPnL
+ * 止盈后：
+ * - RealizedPnL += M_T（只计入 M_T，不超过）
  * - UnrealizedPnL = 0
  * - RiskLine = 0
+ * 
+ * 止损后：
+ * - UnrealizedPnL 限制到 RiskLine（即 VC = 0）
+ * - RealizedPnL 不变
+ * - RiskLine 不变，继续下降
+ * - 随着时间推移，RiskLine 下降，VC 得到补充
  */
 
 import type {
@@ -36,6 +42,20 @@ import type {
  * 交易结果类型
  */
 export type TradeResultType = 'none' | 'take_profit' | 'stop_loss' | 'observing';
+
+/**
+ * 盘中检查结果
+ */
+export interface IntradayCheckResult {
+  /** 是否触发止盈 */
+  takeProfitTriggered: boolean;
+  /** 是否触发止损 */
+  stopLossTriggered: boolean;
+  /** 触发时的浮盈（用于止盈） */
+  peakProfit?: number;
+  /** 触发时的浮亏（用于止损） */
+  maxDrawdown?: number;
+}
 
 export class VirtualAccount {
   /** 止盈线 M_T */
@@ -214,7 +234,171 @@ export class VirtualAccount {
   }
 
   /**
-   * 处理交易结果
+   * 盘中检查止盈/止损（在持仓期间每根K线调用）
+   * 
+   * 止盈条件：持仓期间最高浮盈 >= M_T
+   * - 做多：(最高价 - 开仓价) / 开仓价 * 仓位 + 已有未实现盈亏 >= M_T
+   * - 做空：(开仓价 - 最低价) / 开仓价 * 仓位 + 已有未实现盈亏 >= M_T
+   * 
+   * 止损条件：持仓期间最大浮亏使得 VC <= 0
+   * - 做多：用最低价计算浮亏
+   * - 做空：用最高价计算浮亏
+   * 
+   * @param direction - 持仓方向：1=做多, -1=做空
+   * @param entryPrice - 开仓价格
+   * @param high - 当前K线最高价
+   * @param low - 当前K线最低价
+   * @param candleIndex - 当前K线索引
+   * @param tradeIndex - 交易序号
+   * @param externalC - 外部提供的 C 值
+   * @param externalStopLoss - 外部提供的 StopLoss 值
+   * @returns 盘中检查结果
+   */
+  checkIntraday(
+    direction: 1 | -1,
+    entryPrice: number,
+    high: number,
+    low: number,
+    candleIndex: number,
+    tradeIndex: number,
+    externalC: number,
+    externalStopLoss: number
+  ): IntradayCheckResult {
+    // 观察期不检查
+    if (this.enableRiskControl && this.isObserving) {
+      return { takeProfitTriggered: false, stopLossTriggered: false };
+    }
+    
+    // 计算盘中最高浮盈和最大浮亏
+    // 做多：最高浮盈用最高价，最大浮亏用最低价
+    // 做空：最高浮盈用最低价，最大浮亏用最高价
+    const bestPrice = direction > 0 ? high : low;
+    const worstPrice = direction > 0 ? low : high;
+    
+    // 盘中最高浮盈（单位仓位）
+    const peakProfitPerUnit = direction * (bestPrice - entryPrice) / entryPrice;
+    // 盘中最大浮亏（单位仓位，正数表示亏损）
+    const maxDrawdownPerUnit = -direction * (worstPrice - entryPrice) / entryPrice;
+    
+    // 计算仓位放大后的浮盈/浮亏
+    const peakProfit = peakProfitPerUnit * this.positionSize;
+    const maxDrawdown = maxDrawdownPerUnit * this.positionSize;
+    
+    // 计算盘中最高 UnrealizedPnL
+    const peakUnrealizedPnL = this.unrealizedPnL + peakProfit;
+    
+    // 计算盘中最低 UnrealizedPnL（最大亏损时）
+    const worstUnrealizedPnL = this.unrealizedPnL - maxDrawdown;
+    
+    // 计算盘中最低 VC
+    const worstVC = worstUnrealizedPnL - this.riskLine;
+    
+    // 检查止盈：盘中最高浮盈 >= M_T
+    if (peakUnrealizedPnL >= this.targetMultiplier) {
+      return {
+        takeProfitTriggered: true,
+        stopLossTriggered: false,
+        peakProfit: peakUnrealizedPnL,
+      };
+    }
+    
+    // 检查止损：盘中最低 VC <= 0
+    if (this.enableRiskControl && worstVC <= 0) {
+      return {
+        takeProfitTriggered: false,
+        stopLossTriggered: true,
+        maxDrawdown: maxDrawdown,
+      };
+    }
+    
+    return { takeProfitTriggered: false, stopLossTriggered: false };
+  }
+
+  /**
+   * 处理盘中止盈
+   * 
+   * 止盈时：RealizedPnL += M_T（只计入 M_T，不超过）
+   */
+  processIntradayTakeProfit(
+    candleIndex: number,
+    tradeIndex: number,
+    externalC: number,
+    externalStopLoss: number
+  ): void {
+    this.currentCandleIndex = candleIndex;
+    this.roundTradeCount++;
+    
+    if (this.recordSnapshots) {
+      this.accountSnapshots.push({
+        candleIndex,
+        tradeIndex,
+        eventType: 'take_profit',
+        realizedPnL: this.realizedPnL,
+        unrealizedPnL: this.targetMultiplier,  // 止盈时限制为 M_T
+        pnl: this.realizedPnL + this.targetMultiplier,
+        riskLine: this.riskLine,
+        ventureCapital: this.targetMultiplier - this.riskLine,
+        stopLoss: externalStopLoss,
+        estimatedC: externalC,
+        positionSize: this.positionSize,
+        pnlPercent: 0,  // 盘中止盈，不使用收盘价计算
+        actualPnl: this.targetMultiplier - this.unrealizedPnL,  // 本次交易贡献
+        isObserving: false,
+      });
+    }
+    
+    this.recordTakeProfitEvent(candleIndex);
+    this.realTakeProfitCount++;
+    this.resetRoundForTakeProfit(candleIndex);
+  }
+
+  /**
+   * 处理盘中止损
+   * 
+   * 止损时：UnrealizedPnL 限制到 RiskLine（即 VC = 0）
+   * - RealizedPnL 不变
+   * - RiskLine 不变，继续下降
+   * - 随着时间推移，VC 得到补充
+   */
+  processIntradayStopLoss(
+    candleIndex: number,
+    tradeIndex: number,
+    externalC: number,
+    externalStopLoss: number
+  ): void {
+    this.currentCandleIndex = candleIndex;
+    this.roundTradeCount++;
+    
+    // 止损时 UnrealizedPnL 限制到 RiskLine（VC = 0）
+    this.unrealizedPnL = this.riskLine;
+    
+    if (this.recordSnapshots) {
+      this.accountSnapshots.push({
+        candleIndex,
+        tradeIndex,
+        eventType: 'stop_loss',
+        realizedPnL: this.realizedPnL,
+        unrealizedPnL: this.unrealizedPnL,
+        pnl: this.getPnL(),
+        riskLine: this.riskLine,
+        ventureCapital: 0,  // 止损时 VC = 0
+        stopLoss: externalStopLoss,
+        estimatedC: externalC,
+        positionSize: this.positionSize,
+        pnlPercent: 0,  // 盘中止损
+        actualPnl: 0,   // 止损后限制，实际贡献为0
+        isObserving: false,
+      });
+    }
+    
+    this.recordStopLossEvent(candleIndex, externalC, externalStopLoss);
+    // 止损后不重置轮次，只是记录事件
+    // 仓位变为0（因为 VC = 0）
+    this.positionSize = this.calculatePosition();
+  }
+
+  /**
+   * 处理交易结果（交易正常结束，未触发盘中止盈/止损）
    * 
    * @param pnlPercent - 单位仓位的盈亏百分比
    * @param candleIndex - 当前K线索引
@@ -280,7 +464,7 @@ export class VirtualAccount {
     }
     
     // ============================================
-    // 实盘期：正常处理交易
+    // 实盘期：正常处理交易（未触发盘中止盈/止损）
     // ============================================
     this.roundTradeCount++;
     
@@ -291,9 +475,13 @@ export class VirtualAccount {
     const vc = this.getVentureCapital();
     
     // ============================================
-    // 止损检查：VC <= 0
+    // 交易结束时的止损检查：VC <= 0
+    // （作为盘中检查的补充，处理边界情况）
     // ============================================
     if (this.enableRiskControl && vc <= 0) {
+      // 止损时 UnrealizedPnL 限制到 RiskLine
+      this.unrealizedPnL = this.riskLine;
+      
       if (this.recordSnapshots) {
         this.accountSnapshots.push({
           candleIndex,
@@ -303,7 +491,7 @@ export class VirtualAccount {
           unrealizedPnL: this.unrealizedPnL,
           pnl: this.getPnL(),
           riskLine: this.riskLine,
-          ventureCapital: vc,
+          ventureCapital: 0,
           stopLoss: externalStopLoss,
           estimatedC: externalC,
           positionSize: this.positionSize,
@@ -314,12 +502,14 @@ export class VirtualAccount {
       }
       
       this.recordStopLossEvent(candleIndex, externalC, externalStopLoss);
-      this.resetRound(candleIndex);
+      // 止损后不重置轮次，仓位变为0（因为 VC = 0）
+      this.positionSize = this.calculatePosition();
       return 'stop_loss';
     }
     
     // ============================================
-    // 止盈检查：UnrealizedPnL >= M_T
+    // 交易结束时的止盈检查：UnrealizedPnL >= M_T
+    // （作为盘中检查的补充，处理边界情况）
     // ============================================
     if (this.unrealizedPnL >= this.targetMultiplier) {
       if (this.recordSnapshots) {
@@ -328,10 +518,10 @@ export class VirtualAccount {
           tradeIndex,
           eventType: 'take_profit',
           realizedPnL: this.realizedPnL,
-          unrealizedPnL: this.unrealizedPnL,
-          pnl: this.getPnL(),
+          unrealizedPnL: this.targetMultiplier,  // 限制为 M_T
+          pnl: this.realizedPnL + this.targetMultiplier,
           riskLine: this.riskLine,
-          ventureCapital: vc,
+          ventureCapital: this.targetMultiplier - this.riskLine,
           stopLoss: externalStopLoss,
           estimatedC: externalC,
           positionSize: this.positionSize,
@@ -343,7 +533,7 @@ export class VirtualAccount {
       
       this.recordTakeProfitEvent(candleIndex);
       this.realTakeProfitCount++;
-      this.resetRound(candleIndex);
+      this.resetRoundForTakeProfit(candleIndex);
       return 'take_profit';
     }
     
@@ -388,7 +578,7 @@ export class VirtualAccount {
       startCandleIndex: this.roundStartIndex,
       endCandleIndex: candleIndex,
       intervalCandles: candleIndex - this.roundStartIndex,
-      finalVC: this.unrealizedPnL,  // 止盈时 UnrealizedPnL >= M_T
+      finalVC: this.targetMultiplier,  // 止盈时 UnrealizedPnL = M_T
       tradeCount: this.roundTradeCount,
     };
     this.takeProfitEvents.push(event);
@@ -407,8 +597,8 @@ export class VirtualAccount {
       startCandleIndex: this.roundStartIndex,
       endCandleIndex: candleIndex,
       intervalCandles: candleIndex - this.roundStartIndex,
-      finalVC: this.getVentureCapital(),
-      finalPnL: this.getPnL(),
+      finalVC: 0,  // 止损时 VC = 0
+      finalPnL: this.getPnL(),  // 止损后 PnL = RealizedPnL + UnrealizedPnL（限制后）
       finalRiskLine: this.riskLine,
       estimatedC: externalC,
       stopLoss: externalStopLoss,
@@ -418,14 +608,14 @@ export class VirtualAccount {
   }
 
   /**
-   * 止盈/止损后重置
-   * - RealizedPnL += UnrealizedPnL
+   * 止盈后重置
+   * - RealizedPnL += M_T（只计入 M_T）
    * - UnrealizedPnL = 0
    * - RiskLine = 0
    */
-  private resetRound(candleIndex: number): void {
-    // 锁定已实现盈亏
-    this.realizedPnL += this.unrealizedPnL;
+  private resetRoundForTakeProfit(candleIndex: number): void {
+    // 止盈时只计入 M_T
+    this.realizedPnL += this.targetMultiplier;
     // 清零未实现盈亏
     this.unrealizedPnL = 0;
     // 重置风控线
@@ -436,6 +626,8 @@ export class VirtualAccount {
     // 重新计算仓位（VC = 0 - 0 = 0，所以 Position 会是 0 或 1）
     this.positionSize = this.calculatePosition();
   }
+
+  // 注意：止损不再重置轮次，只是限制 UnrealizedPnL 到 RiskLine
 
   // ============================================
   // Getters

@@ -24,9 +24,9 @@ import type {
 } from '../types.js';
 
 import { VirtualAccount } from './virtual-account.js';
-import type { TradeResultType } from './virtual-account.js';
+import type { TradeResultType, IntradayCheckResult } from './virtual-account.js';
 
-export type { TradeResultType };
+export type { TradeResultType, IntradayCheckResult };
 
 export class MultiAccountTracker {
   /** 虚拟账户映射：M_T -> VirtualAccount */
@@ -150,6 +150,86 @@ export class MultiAccountTracker {
         }
       }
     }
+  }
+
+  /**
+   * 盘中检查所有账户的止盈/止损
+   * 
+   * @returns 各账户的盘中检查结果
+   */
+  checkIntradayForAllAccounts(
+    direction: 1 | -1,
+    entryPrice: number,
+    high: number,
+    low: number,
+    candleIndex: number,
+    tradeIndex: number,
+    externalC: number,
+    externalStopLoss: number
+  ): Map<number, IntradayCheckResult> {
+    const results = new Map<number, IntradayCheckResult>();
+    
+    for (const [target, account] of this.accounts) {
+      const result = account.checkIntraday(
+        direction,
+        entryPrice,
+        high,
+        low,
+        candleIndex,
+        tradeIndex,
+        externalC,
+        externalStopLoss
+      );
+      results.set(target, result);
+    }
+    
+    return results;
+  }
+
+  /**
+   * 处理盘中止盈
+   */
+  processIntradayTakeProfitForAccount(
+    target: number,
+    candleIndex: number,
+    tradeIndex: number,
+    externalC: number,
+    externalStopLoss: number
+  ): void {
+    const account = this.accounts.get(target);
+    if (!account) return;
+    
+    account.processIntradayTakeProfit(candleIndex, tradeIndex, externalC, externalStopLoss);
+    
+    // 更新曲线数据
+    if (this.recordSample) {
+      this.updateCurves(target, account, candleIndex, externalC, externalStopLoss);
+    }
+    
+    this.lastCandleIndex = candleIndex;
+  }
+
+  /**
+   * 处理盘中止损
+   */
+  processIntradayStopLossForAccount(
+    target: number,
+    candleIndex: number,
+    tradeIndex: number,
+    externalC: number,
+    externalStopLoss: number
+  ): void {
+    const account = this.accounts.get(target);
+    if (!account) return;
+    
+    account.processIntradayStopLoss(candleIndex, tradeIndex, externalC, externalStopLoss);
+    
+    // 更新曲线数据
+    if (this.recordSample) {
+      this.updateCurves(target, account, candleIndex, externalC, externalStopLoss);
+    }
+    
+    this.lastCandleIndex = candleIndex;
   }
 
   /**
