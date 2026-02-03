@@ -14,7 +14,7 @@ import type { RunStats, TakeProfitStatsSummary } from '../cache/types.js';
 import { MultiAccountTracker } from '../betting/index.js';
 import { createSignalStrategy } from '../signal/index.js';
 import { generateMarket } from '../market/generator.js';
-import { NewParadigmBacktestEngine } from './backtest-engine.js';
+import { evaluateSignalStrategy } from './backtest-engine.js';
 
 /**
  * 单次运行结果
@@ -43,8 +43,6 @@ export function runOnce(
   bettingConfig: BettingStrategyConfig,
   recordSample: boolean = false
 ): SingleRunResult {
-  const engine = new NewParadigmBacktestEngine();
-
   // 1. 生成市场序列
   const candles = generateMarket(marketConfig);
 
@@ -55,12 +53,7 @@ export function runOnce(
   const tracker = new MultiAccountTracker(bettingConfig);
 
   // 4. 评估
-  const { result, sampleData } = engine.evaluateSignalStrategy(
-    candles,
-    strategy,
-    tracker,
-    recordSample
-  );
+  const { result, sampleData } = evaluateSignalStrategy(candles, strategy, tracker, recordSample);
 
   // 5. 转换为缓存格式
   const takeProfitStats: TakeProfitStatsSummary[] = [];

@@ -1,5 +1,5 @@
 import { Command, Option } from 'clipanion';
-import { NewParadigmExperimentRunner } from '../engine/index.js';
+import { runExperiment } from '../engine/index.js';
 import { printReport, exportToJSON } from '../analysis/index.js';
 import { saveReport } from '../visualization/index.js';
 import {
@@ -135,9 +135,8 @@ export class RunCommand extends Command {
       monteCarloRuns,
     };
 
-    const runner = new NewParadigmExperimentRunner();
     console.log('\n运行中...');
-    const result = await runner.run(config);
+    const result = await runExperiment(config);
 
     printReport(result);
 

@@ -42,10 +42,10 @@ export {
 } from './reports/index.js';
 
 // 保存功能
-export { saveReportSuiteStreaming, saveReportSuite } from './save.js';
+export { saveReportSuiteStreaming, saveFullResults } from './save.js';
 
 // 向后兼容的别名
-import { saveReportSuite as _saveReportSuite } from './save.js';
+import { saveFullResults } from './save.js';
 import { generateMarketReportHTML as _generateMarketReportHTML } from './reports/index.js';
 import type { ExperimentResult } from '../types.js';
 
@@ -60,7 +60,7 @@ export function generateHTMLReport(result: ExperimentResult): string {
  * 保存单个结果的报告（向后兼容）
  */
 export async function saveReport(result: ExperimentResult, outputDir: string): Promise<void> {
-  await _saveReportSuite({ results: [result], outputDir });
+  await saveFullResults({ results: [result], outputDir });
 }
 
 /**
@@ -70,5 +70,5 @@ export async function saveComparisonReport(
   results: ExperimentResult[],
   outputDir: string
 ): Promise<string> {
-  return await _saveReportSuite({ results, outputDir });
+  return await saveFullResults({ results, outputDir });
 }

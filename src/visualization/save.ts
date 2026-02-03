@@ -210,10 +210,11 @@ async function saveMarketGroupReports(
 }
 
 /**
- * 旧版接口（向后兼容，但会一次性加载所有数据）
- * @deprecated 使用 saveReportSuiteStreaming 代替
+ * 保存完整实验结果的报告
+ *
+ * 用于直接保存 ExperimentResult，不需要缓存系统
  */
-export async function saveReportSuite(suite: {
+export async function saveFullResults(suite: {
   results: ExperimentResult[];
   outputDir: string;
 }): Promise<string> {

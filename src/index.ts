@@ -22,21 +22,9 @@ export {
 // 投注策略（新增）
 export { MultiAccountTracker } from './betting/index.js';
 
-// 仓位管理（保留旧API用于兼容）
-export {
-  AntiMartingalePositionManager,
-  FixedPositionManager,
-  createPositionManager,
-} from './position/index.js';
-
-// 回测引擎（新范式）
-export {
-  NewParadigmBacktestEngine,
-  NewParadigmExperimentRunner,
-  // 别名，向后兼容
-  BacktestEngine,
-  ExperimentRunner,
-} from './engine/index.js';
+// 回测引擎
+export { evaluateSignalStrategy, runExperiment, runOnce } from './engine/index.js';
+export type { EvaluationOutput, SingleRunResult } from './engine/index.js';
 
 // 分析工具
 export {

@@ -606,26 +606,3 @@ export const VOLATILITY_SCENARIOS: Record<number, string> = {
   1.0: 'BTC 20x杠杆',
   2.0: 'BTC 50x杠杆',
 };
-
-// ============================================
-// 保留的旧类型（用于兼容，可逐步移除）
-// ============================================
-
-/** @deprecated 使用 VirtualAccountState 替代 */
-export interface PositionState {
-  assetMultiplier: number;
-  positionSize: number;
-  consecutiveWins: number;
-  peakMultiplier: number;
-  baseSize: number;
-  currentPosition: number;
-  entryPrice: number | null;
-}
-
-/** @deprecated 投注策略现在内置于引擎中 */
-export interface PositionManager {
-  getState(): PositionState;
-  getPositionSize(): number;
-  processTradeResult(pnlPercent: number): void;
-  reset(): void;
-}
