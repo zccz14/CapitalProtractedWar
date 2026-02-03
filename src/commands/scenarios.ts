@@ -8,7 +8,7 @@ export class ScenariosCommand extends Command {
     description: '列出等效波动率场景映射',
   });
 
-  async execute() {
+  async execute(): Promise<void> {
     console.log('\n等效波动率场景映射:');
     console.log('='.repeat(50));
     for (const [vol, desc] of Object.entries(VOLATILITY_SCENARIOS)) {

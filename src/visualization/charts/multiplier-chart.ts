@@ -5,7 +5,7 @@
 /**
  * 生成资金曲线图 SVG（含风控线）
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+
 export function generateMultiplierChartSVG(
   multipliers: number[],
   takeProfitMarkers: number[],

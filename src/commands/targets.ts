@@ -8,7 +8,7 @@ export class TargetsCommand extends Command {
     description: '列出默认止盈线序列',
   });
 
-  async execute() {
+  async execute(): Promise<void> {
     console.log('\n默认止盈线序列 (M_T):');
     console.log('='.repeat(50));
     for (const target of DEFAULT_TAKE_PROFIT_TARGETS) {

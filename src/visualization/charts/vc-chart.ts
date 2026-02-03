@@ -49,8 +49,9 @@ export function generateVCChartSVG(
   const yRange = maxY - minY || 1;
 
   // 坐标转换函数
-  const toX = (i: number) => padding.left + (i / (sampledVC.length - 1)) * chartWidth;
-  const toY = (v: number) => padding.top + chartHeight - ((v - minY) / yRange) * chartHeight;
+  const toX = (i: number): number => padding.left + (i / (sampledVC.length - 1)) * chartWidth;
+  const toY = (v: number): number =>
+    padding.top + chartHeight - ((v - minY) / yRange) * chartHeight;
 
   // 生成 VC 曲线路径（蓝色）
   const vcPoints = sampledVC.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`);

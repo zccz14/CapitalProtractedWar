@@ -74,7 +74,7 @@ export class RunCommand extends Command {
     description: '随机种子',
   });
 
-  async execute() {
+  async execute(): Promise<void> {
     const volatility = parseFloat(this.volatility);
     const candleCount = parseInt(this.candles);
     const monteCarloRuns = parseInt(this.runs);

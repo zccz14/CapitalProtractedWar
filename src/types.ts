@@ -300,6 +300,8 @@ export interface SignalEvaluationResult {
   totalCandles: number;
   /** 胜率 */
   winRate: number;
+  /** 基准账户最终 PnL（固定仓位=1 的累计收益） */
+  baselineFinalPnL: number;
 }
 
 // ============================================

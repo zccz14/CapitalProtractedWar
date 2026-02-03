@@ -50,7 +50,7 @@ export class ExpNewCommand extends Command {
     description: '详细输出',
   });
 
-  async execute() {
+  async execute(): Promise<void> {
     const phases = this.phase ? this.phase.split(',').map((p) => parseInt(p.trim())) : [1, 2, 3, 4];
 
     await runExperiment({

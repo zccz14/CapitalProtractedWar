@@ -2,7 +2,7 @@
  * Sample Report Overview - 样本报告概览部分生成
  */
 
-import type { SampleRunData, AccountSnapshot } from '../../types.js';
+import type { SampleRunData } from '../../types.js';
 
 export interface SampleOverviewData {
   totalTrades: number;
@@ -28,15 +28,20 @@ export function extractOverviewData(
   sampleData: SampleRunData,
   targetMT: number
 ): SampleOverviewData {
-  const { trades, baselineSnapshots, baselineEquityCurve, accountSnapshots, observationEndIndices } =
-    sampleData;
+  const {
+    trades,
+    baselineSnapshots,
+    baselineEquityCurve,
+    accountSnapshots,
+    observationEndIndices,
+  } = sampleData;
 
   const totalTrades = trades?.length ?? 0;
   const winTrades = trades?.filter((t) => t.isWin).length ?? 0;
   const winRate = totalTrades > 0 ? ((winTrades / totalTrades) * 100).toFixed(1) : 'N/A';
   const avgHoldingPeriod =
-    totalTrades > 0
-      ? (trades!.reduce((sum, t) => sum + t.holdingPeriod, 0) / totalTrades).toFixed(1)
+    totalTrades > 0 && trades
+      ? (trades.reduce((sum, t) => sum + t.holdingPeriod, 0) / totalTrades).toFixed(1)
       : 'N/A';
   const totalPnl = trades?.reduce((sum, t) => sum + t.pnlPercent, 0) ?? 0;
   const finalBaselineEquity = baselineEquityCurve?.[baselineEquityCurve.length - 1] ?? 0;

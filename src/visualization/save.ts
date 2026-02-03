@@ -6,7 +6,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { ExperimentResult, AggregatedSignalResult, SampleRunData } from '../types.js';
+import type { ExperimentResult } from '../types.js';
 import type { LightExperimentResult, SampleDataLoader } from './types.js';
 import { sanitizeFilename } from './utils.js';
 import {
@@ -51,7 +51,13 @@ export async function saveReportSuiteStreaming(
     console.log(`  处理市场组 ${i + 1}/${totalGroups}: ${lightResult.config.name}`);
 
     // 构建完整结果（包含样本数据）
-    const fullResult = buildFullResult(lightResult, marketGroupId, loadSampleData, takeProfitTargets, bettingId);
+    const fullResult = buildFullResult(
+      lightResult,
+      marketGroupId,
+      loadSampleData,
+      takeProfitTargets,
+      bettingId
+    );
 
     // 生成该市场组的所有报告
     await saveMarketGroupReports(fullResult, outputDir, takeProfitTargets);
@@ -110,12 +116,16 @@ function buildFullResult(
       // 从 sampleIndices 获取正确的 baselinePnL
       const baselinePnL = sampleIndices?.[sampleType]?.baselinePnL ?? 0;
 
-      runResult.sampleData!.set(signalId, sampleData);
-      runResult.sampleMetadata!.set(signalId, {
-        runIndex: runResult.runIndex,
-        baselinePnL,
-        sampleType,
-      });
+      if (runResult.sampleData) {
+        runResult.sampleData.set(signalId, sampleData);
+      }
+      if (runResult.sampleMetadata) {
+        runResult.sampleMetadata.set(signalId, {
+          runIndex: runResult.runIndex,
+          baselinePnL,
+          sampleType,
+        });
+      }
     }
   }
 
@@ -148,7 +158,11 @@ async function saveMarketGroupReports(
   for (const signalResult of result.signalResults) {
     const signalFilename = `signal_${sanitizeFilename(config.name)}_${sanitizeFilename(signalResult.signalType)}.html`;
     const signalPath = path.join(outputDir, signalFilename);
-    fs.writeFileSync(signalPath, generateSignalDetailHTML(result, signalResult, outputDir), 'utf-8');
+    fs.writeFileSync(
+      signalPath,
+      generateSignalDetailHTML(result, signalResult, outputDir),
+      'utf-8'
+    );
 
     // 3. 生成样本详情页面
     if (result.sampleRuns && result.sampleRuns.length > 0) {

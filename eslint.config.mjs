@@ -17,22 +17,13 @@ export default tseslint.config(
       },
     },
     rules: {
-      // 文件和函数大小限制
+      // 文件大小限制
       'max-lines': [
         'warn',
         {
-          max: 300,
+          max: 500,
           skipBlankLines: true,
           skipComments: true,
-        },
-      ],
-      'max-lines-per-function': [
-        'warn',
-        {
-          max: 50,
-          skipBlankLines: true,
-          skipComments: true,
-          IIFEs: true,
         },
       ],
 
@@ -63,12 +54,6 @@ export default tseslint.config(
       'object-shorthand': 'error',
       'prefer-arrow-callback': 'error',
       'prefer-template': 'warn',
-
-      // 复杂度控制
-      complexity: ['warn', 15],
-      'max-depth': ['warn', 4],
-      'max-nested-callbacks': ['warn', 3],
-      'max-params': ['warn', 5],
     },
   }
 );

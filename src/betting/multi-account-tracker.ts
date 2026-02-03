@@ -369,7 +369,7 @@ export class MultiAccountTracker {
       intervals.reduce((sum: number, v: number) => sum + (v - mean) ** 2, 0) / roundCount;
     const std = Math.sqrt(variance);
 
-    const percentile = (p: number) => {
+    const percentile = (p: number): number => {
       const index = Math.floor(p * roundCount);
       return sorted[Math.min(index, roundCount - 1)];
     };

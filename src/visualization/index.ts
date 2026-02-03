@@ -46,14 +46,14 @@ export { saveReportSuiteStreaming, saveReportSuite } from './save.js';
 
 // 向后兼容的别名
 import { saveReportSuite as _saveReportSuite } from './save.js';
+import { generateMarketReportHTML as _generateMarketReportHTML } from './reports/index.js';
 import type { ExperimentResult } from '../types.js';
 
 /**
  * 生成 HTML 报告（向后兼容）
  */
 export function generateHTMLReport(result: ExperimentResult): string {
-  const { generateMarketReportHTML } = require('./reports/index.js');
-  return generateMarketReportHTML(result, '');
+  return _generateMarketReportHTML(result, '');
 }
 
 /**

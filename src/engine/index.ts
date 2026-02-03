@@ -338,6 +338,7 @@ export class NewParadigmBacktestEngine {
       totalTradeCount,
       totalCandles: candles.length,
       winRate: totalTradeCount > 0 ? winCount / totalTradeCount : 0,
+      baselineFinalPnL: baseline.getCumulativeEquity(),
     };
 
     // ============================================
@@ -527,7 +528,8 @@ export class NewParadigmExperimentRunner {
     const selectedIndicesMap = new Map<number, Map<string, 'best' | 'median' | 'worst'>>();
 
     for (const signalType of signalTypes) {
-      const rankings = signalRankings.get(signalType)!;
+      const rankings = signalRankings.get(signalType);
+      if (!rankings) continue;
       const n = rankings.length;
 
       const worstIdx = rankings[0].idx;
@@ -543,7 +545,10 @@ export class NewParadigmExperimentRunner {
         if (!selectedIndicesMap.has(idx)) {
           selectedIndicesMap.set(idx, new Map());
         }
-        selectedIndicesMap.get(idx)!.set(signalType, type);
+        const typeMap = selectedIndicesMap.get(idx);
+        if (typeMap) {
+          typeMap.set(signalType, type);
+        }
       }
     }
 
@@ -589,10 +594,10 @@ export class NewParadigmExperimentRunner {
       const takeProfitStats = new Map<number, AggregatedTakeProfitStats>();
 
       for (const target of config.betting.takeProfitTargets) {
-        const aggregated = this.aggregateTakeProfitStats(
-          signalRunResults.map((r) => r.takeProfitStats.get(target)!),
-          target
-        );
+        const stats = signalRunResults.map((r) => r.takeProfitStats.get(target));
+        const validStats = stats.filter((s): s is NonNullable<typeof s> => s !== undefined);
+        if (validStats.length === 0) continue;
+        const aggregated = this.aggregateTakeProfitStats(validStats, target);
         takeProfitStats.set(target, aggregated);
       }
 
@@ -652,7 +657,7 @@ export class NewParadigmExperimentRunner {
       const variance = allIntervals.reduce((sum, v) => sum + (v - mean) ** 2, 0) / n;
       const std = Math.sqrt(variance);
 
-      const percentile = (p: number) => {
+      const percentile = (p: number): number => {
         const index = Math.floor(p * n);
         return sorted[Math.min(index, n - 1)];
       };
@@ -741,8 +746,8 @@ export function runOnce(
     });
   }
 
-  // 获取基准账户最终 PnL
-  const baselineFinalPnL = sampleData?.baselineEquityCurve?.slice(-1)[0] ?? 0;
+  // 获取基准账户最终 PnL（从评估结果中获取，不依赖 sampleData）
+  const baselineFinalPnL = result.baselineFinalPnL;
 
   const stats: RunStats = {
     signalType: result.signalType,
