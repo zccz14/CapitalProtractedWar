@@ -29,6 +29,7 @@ import {
   type TradeResultType,
   type IntradayCheckResult,
 } from './virtual-account.js';
+import { TrackerCurves } from './tracker-curves.js';
 
 export type { TradeResultType, IntradayCheckResult };
 
@@ -48,41 +49,14 @@ export class MultiAccountTracker {
   /** 是否记录样本数据 */
   private recordSample: boolean = false;
 
-  /** 最后更新的K线索引 */
-  private lastCandleIndex: number = -1;
-
-  // ============================================
-  // 曲线数据（用于可视化）
-  // ============================================
-
-  /** 已实现盈亏曲线 */
-  private realizedPnLCurves: Map<number, number[]> = new Map();
-
-  /** 未实现盈亏曲线 */
-  private unrealizedPnLCurves: Map<number, number[]> = new Map();
-
-  /** 总盈亏 PnL 曲线 */
-  private pnlCurves: Map<number, number[]> = new Map();
-
-  /** 风控线曲线 */
-  private riskLineCurves: Map<number, number[]> = new Map();
-
-  /** VC 曲线 */
-  private vcCurves: Map<number, number[]> = new Map();
-
-  /** 仓位曲线 */
-  private positionCurves: Map<number, number[]> = new Map();
-
-  /** C 值曲线 */
-  private estimatedCCurves: Map<number, number[]> = new Map();
-
-  /** StopLoss 值曲线 */
-  private stopLossCurves: Map<number, number[]> = new Map();
+  /** 曲线数据管理器 */
+  private curves: TrackerCurves;
 
   constructor(config: BettingStrategyConfig) {
     this.accounts = new Map();
     this.tradingCostRate = config.tradingCostRate ?? 0;
     this.enableRiskControl = config.enableRiskControl ?? true;
+    this.curves = new TrackerCurves();
 
     // 为每个止盈线创建独立账户
     for (const target of config.takeProfitTargets) {
@@ -105,19 +79,7 @@ export class MultiAccountTracker {
    */
   setTotalCandles(count: number): void {
     this.totalCandles = count;
-
-    if (this.recordSample) {
-      for (const target of this.accounts.keys()) {
-        this.realizedPnLCurves.set(target, new Array(count).fill(0));
-        this.unrealizedPnLCurves.set(target, new Array(count).fill(0));
-        this.pnlCurves.set(target, new Array(count).fill(0));
-        this.riskLineCurves.set(target, new Array(count).fill(0));
-        this.vcCurves.set(target, new Array(count).fill(0));
-        this.positionCurves.set(target, new Array(count).fill(0));
-        this.estimatedCCurves.set(target, new Array(count).fill(0));
-        this.stopLossCurves.set(target, new Array(count).fill(0));
-      }
-    }
+    this.curves.initialize(Array.from(this.accounts.keys()), count, this.recordSample);
   }
 
   /**
@@ -129,11 +91,11 @@ export class MultiAccountTracker {
 
       // 记录曲线数据
       if (this.recordSample) {
-        this.updateCurves(target, account, candleIndex, externalC, 0);
+        this.curves.update(target, account, candleIndex, externalC, 0);
       }
     }
 
-    this.lastCandleIndex = candleIndex;
+    this.curves.setLastCandleIndex(candleIndex);
   }
 
   /**
@@ -145,22 +107,13 @@ export class MultiAccountTracker {
 
       // 更新 StopLoss 曲线
       if (this.recordSample) {
-        const stopLossCurve = this.stopLossCurves.get(target);
-        if (
-          stopLossCurve &&
-          this.lastCandleIndex >= 0 &&
-          this.lastCandleIndex < stopLossCurve.length
-        ) {
-          stopLossCurve[this.lastCandleIndex] = externalStopLoss;
-        }
+        this.curves.updateStopLoss(target, this.curves.getLastCandleIndex(), externalStopLoss);
       }
     }
   }
 
   /**
    * 盘中检查所有账户的止盈/止损
-   *
-   * @returns 各账户的盘中检查结果
    */
   checkIntradayForAllAccounts(
     direction: 1 | -1,
@@ -208,10 +161,10 @@ export class MultiAccountTracker {
 
     // 更新曲线数据
     if (this.recordSample) {
-      this.updateCurves(target, account, candleIndex, externalC, externalStopLoss);
+      this.curves.update(target, account, candleIndex, externalC, externalStopLoss);
     }
 
-    this.lastCandleIndex = candleIndex;
+    this.curves.setLastCandleIndex(candleIndex);
   }
 
   /**
@@ -231,10 +184,10 @@ export class MultiAccountTracker {
 
     // 更新曲线数据
     if (this.recordSample) {
-      this.updateCurves(target, account, candleIndex, externalC, externalStopLoss);
+      this.curves.update(target, account, candleIndex, externalC, externalStopLoss);
     }
 
-    this.lastCandleIndex = candleIndex;
+    this.curves.setLastCandleIndex(candleIndex);
   }
 
   /**
@@ -252,56 +205,11 @@ export class MultiAccountTracker {
 
       // 更新曲线数据
       if (this.recordSample) {
-        this.updateCurves(target, account, candleIndex, externalC, externalStopLoss);
+        this.curves.update(target, account, candleIndex, externalC, externalStopLoss);
       }
     }
 
-    this.lastCandleIndex = candleIndex;
-  }
-
-  /**
-   * 更新曲线数据
-   */
-  private updateCurves(
-    target: number,
-    account: VirtualAccount,
-    candleIndex: number,
-    externalC: number,
-    externalStopLoss: number
-  ): void {
-    const realizedPnLCurve = this.realizedPnLCurves.get(target);
-    const unrealizedPnLCurve = this.unrealizedPnLCurves.get(target);
-    const pnlCurve = this.pnlCurves.get(target);
-    const riskLineCurve = this.riskLineCurves.get(target);
-    const vcCurve = this.vcCurves.get(target);
-    const positionCurve = this.positionCurves.get(target);
-    const cCurve = this.estimatedCCurves.get(target);
-    const stopLossCurve = this.stopLossCurves.get(target);
-
-    if (realizedPnLCurve && candleIndex < realizedPnLCurve.length) {
-      realizedPnLCurve[candleIndex] = account.getRealizedPnL();
-    }
-    if (unrealizedPnLCurve && candleIndex < unrealizedPnLCurve.length) {
-      unrealizedPnLCurve[candleIndex] = account.getUnrealizedPnL();
-    }
-    if (pnlCurve && candleIndex < pnlCurve.length) {
-      pnlCurve[candleIndex] = account.getPnL();
-    }
-    if (riskLineCurve && candleIndex < riskLineCurve.length) {
-      riskLineCurve[candleIndex] = account.getRiskLine();
-    }
-    if (vcCurve && candleIndex < vcCurve.length) {
-      vcCurve[candleIndex] = account.getVentureCapital();
-    }
-    if (positionCurve && candleIndex < positionCurve.length) {
-      positionCurve[candleIndex] = account.getPositionSize();
-    }
-    if (cCurve && candleIndex < cCurve.length) {
-      cCurve[candleIndex] = externalC;
-    }
-    if (stopLossCurve && candleIndex < stopLossCurve.length && externalStopLoss > 0) {
-      stopLossCurve[candleIndex] = externalStopLoss;
-    }
+    this.curves.setLastCandleIndex(candleIndex);
   }
 
   // ============================================
@@ -395,91 +303,47 @@ export class MultiAccountTracker {
   }
 
   // ============================================
-  // 曲线数据获取
+  // 曲线数据获取（委托给 TrackerCurves）
   // ============================================
 
-  /**
-   * 填充曲线间隙到末尾
-   */
-  private finalizeCurves(): void {
-    if (!this.recordSample || this.lastCandleIndex < 0) return;
-
-    for (const [target, _account] of this.accounts) {
-      const realizedPnLCurve = this.realizedPnLCurves.get(target);
-      const unrealizedPnLCurve = this.unrealizedPnLCurves.get(target);
-      const pnlCurve = this.pnlCurves.get(target);
-      const riskLineCurve = this.riskLineCurves.get(target);
-      const vcCurve = this.vcCurves.get(target);
-      const positionCurve = this.positionCurves.get(target);
-      const cCurve = this.estimatedCCurves.get(target);
-      const stopLossCurve = this.stopLossCurves.get(target);
-
-      if (!pnlCurve) continue;
-
-      const lastRealizedPnL = realizedPnLCurve?.[this.lastCandleIndex] ?? 0;
-      const lastUnrealizedPnL = unrealizedPnLCurve?.[this.lastCandleIndex] ?? 0;
-      const lastPnL = pnlCurve[this.lastCandleIndex] ?? 0;
-      const lastRiskLine = riskLineCurve?.[this.lastCandleIndex] ?? 0;
-      const _lastVC = vcCurve?.[this.lastCandleIndex] ?? 0;
-      const lastPosition = positionCurve?.[this.lastCandleIndex] ?? 0;
-      const lastC = cCurve?.[this.lastCandleIndex] ?? 0;
-      const lastStopLoss = stopLossCurve?.[this.lastCandleIndex] ?? 0;
-
-      for (let i = this.lastCandleIndex + 1; i < pnlCurve.length; i++) {
-        if (realizedPnLCurve) realizedPnLCurve[i] = lastRealizedPnL;
-        if (unrealizedPnLCurve) unrealizedPnLCurve[i] = lastUnrealizedPnL;
-        pnlCurve[i] = lastPnL;
-        // 风控线继续下降
-        if (riskLineCurve) riskLineCurve[i] = lastRiskLine - lastC * (i - this.lastCandleIndex);
-        // VC = UnrealizedPnL - RiskLine
-        if (vcCurve && unrealizedPnLCurve && riskLineCurve) {
-          vcCurve[i] = unrealizedPnLCurve[i] - riskLineCurve[i];
-        }
-        if (positionCurve) positionCurve[i] = lastPosition;
-        if (cCurve) cCurve[i] = lastC;
-        if (stopLossCurve) stopLossCurve[i] = lastStopLoss;
-      }
-    }
-  }
-
   getRealizedPnLCurves(): Map<number, number[]> {
-    this.finalizeCurves();
-    return this.realizedPnLCurves;
+    this.curves.finalize(this.accounts);
+    return this.curves.getRealizedPnLCurves();
   }
 
   getUnrealizedPnLCurves(): Map<number, number[]> {
-    this.finalizeCurves();
-    return this.unrealizedPnLCurves;
+    this.curves.finalize(this.accounts);
+    return this.curves.getUnrealizedPnLCurves();
   }
 
   getPnLCurves(): Map<number, number[]> {
-    this.finalizeCurves();
-    return this.pnlCurves;
+    this.curves.finalize(this.accounts);
+    return this.curves.getPnLCurves();
   }
 
   getRiskLineCurves(): Map<number, number[]> {
-    this.finalizeCurves();
-    return this.riskLineCurves;
+    this.curves.finalize(this.accounts);
+    return this.curves.getRiskLineCurves();
   }
 
   getVCCurves(): Map<number, number[]> {
-    this.finalizeCurves();
-    return this.vcCurves;
+    this.curves.finalize(this.accounts);
+    return this.curves.getVCCurves();
   }
 
   getPositionCurves(): Map<number, number[]> {
-    this.finalizeCurves();
-    return this.positionCurves;
+    this.curves.finalize(this.accounts);
+    return this.curves.getPositionCurves();
   }
 
   getEstimatedCCurves(): Map<number, number[]> {
-    this.finalizeCurves();
-    return this.estimatedCCurves;
+    this.curves.finalize(this.accounts);
+    return this.curves.getEstimatedCCurves();
   }
 
   getStopLossCurves(): Map<number, number[]> {
-    this.finalizeCurves();
-    return this.stopLossCurves;
+    this.curves.finalize(this.accounts);
+    return this.curves.getStopLossCurves();
   }
 
   /**
@@ -547,15 +411,7 @@ export class MultiAccountTracker {
    */
   reset(): void {
     this.totalCandles = 0;
-    this.lastCandleIndex = -1;
-    this.realizedPnLCurves.clear();
-    this.unrealizedPnLCurves.clear();
-    this.pnlCurves.clear();
-    this.riskLineCurves.clear();
-    this.vcCurves.clear();
-    this.positionCurves.clear();
-    this.estimatedCCurves.clear();
-    this.stopLossCurves.clear();
+    this.curves.reset();
     for (const account of this.accounts.values()) {
       account.reset();
     }
