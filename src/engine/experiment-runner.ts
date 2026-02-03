@@ -289,6 +289,3 @@ export class NewParadigmExperimentRunner {
     };
   }
 }
-
-// 向后兼容别名
-export { NewParadigmExperimentRunner as ExperimentRunner };

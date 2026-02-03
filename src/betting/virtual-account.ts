@@ -27,8 +27,6 @@ import {
   checkIntradayLogic,
 } from './virtual-account-trade.js';
 
-export type { TradeResultType, IntradayCheckResult };
-
 export class VirtualAccount {
   readonly targetMultiplier: number;
   private enableRiskControl: boolean;

@@ -5,10 +5,12 @@
  */
 
 // 回测引擎
-export { NewParadigmBacktestEngine, BacktestEngine } from './backtest-engine.js';
+export { NewParadigmBacktestEngine } from './backtest-engine.js';
+export { NewParadigmBacktestEngine as BacktestEngine } from './backtest-engine.js';
 
 // 实验运行器
-export { NewParadigmExperimentRunner, ExperimentRunner } from './experiment-runner.js';
+export { NewParadigmExperimentRunner } from './experiment-runner.js';
+export { NewParadigmExperimentRunner as ExperimentRunner } from './experiment-runner.js';
 
 // 单次运行函数
 export { runOnce } from './run-once.js';

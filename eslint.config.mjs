@@ -55,5 +55,25 @@ export default tseslint.config(
       'prefer-arrow-callback': 'error',
       'prefer-template': 'warn',
     },
+  },
+  // 禁止非 index.ts 文件中的 re-export
+  {
+    files: ['src/**/*.ts'],
+    ignores: ['src/**/index.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'warn',
+        {
+          // 禁止 export { X } from '...' 语法
+          selector: 'ExportNamedDeclaration[source]',
+          message: 'Re-exports are only allowed in index.ts files. Import directly from source.',
+        },
+        {
+          // 禁止 import 后再 export（无 source 且无 declaration 的 export）
+          selector: 'ExportNamedDeclaration:not([source]):not([declaration]) > ExportSpecifier',
+          message: 'Re-exports are only allowed in index.ts files. Import directly from source.',
+        },
+      ],
+    },
   }
 );

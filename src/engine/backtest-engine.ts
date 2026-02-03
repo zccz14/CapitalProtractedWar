@@ -396,6 +396,3 @@ export class NewParadigmBacktestEngine {
     return maxDrawdown;
   }
 }
-
-// 向后兼容别名
-export { NewParadigmBacktestEngine as BacktestEngine };

@@ -13,8 +13,6 @@ import {
 } from '../charts/index.js';
 import { generateSampleLinksHTML } from './signal-report-samples.js';
 
-export { generateSampleLinksHTML };
-
 /**
  * 生成信号策略详细报告 HTML
  */

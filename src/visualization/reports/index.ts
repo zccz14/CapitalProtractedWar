@@ -4,7 +4,8 @@
 
 export { generateIndexHTML, type ReportSuiteForIndex } from './index-report.js';
 export { generateMarketReportHTML } from './market-report.js';
-export { generateSignalDetailHTML, generateSampleLinksHTML } from './signal-report.js';
+export { generateSignalDetailHTML } from './signal-report.js';
+export { generateSampleLinksHTML } from './signal-report-samples.js';
 export { generateSampleDetailHTML } from './sample-report.js';
 export { generatePriceSignalChartSVG } from './sample-charts.js';
 export {

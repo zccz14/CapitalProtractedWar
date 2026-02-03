@@ -13,6 +13,6 @@
  */
 
 export { VirtualAccount } from './virtual-account.js';
-export type { TradeResultType, IntradayCheckResult } from './virtual-account.js';
+export type { TradeResultType, IntradayCheckResult } from './virtual-account-types.js';
 export { MultiAccountTracker } from './multi-account-tracker.js';
 export { BaselineTracker } from './baseline-tracker.js';

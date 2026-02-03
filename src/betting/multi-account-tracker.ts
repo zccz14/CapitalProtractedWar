@@ -24,14 +24,9 @@ import type {
   AccountSnapshot,
 } from '../types.js';
 
-import {
-  VirtualAccount,
-  type TradeResultType,
-  type IntradayCheckResult,
-} from './virtual-account.js';
+import { VirtualAccount } from './virtual-account.js';
+import type { IntradayCheckResult } from './virtual-account-types.js';
 import { TrackerCurves } from './tracker-curves.js';
-
-export type { TradeResultType, IntradayCheckResult };
 
 export class MultiAccountTracker {
   /** 虚拟账户映射：M_T -> VirtualAccount */

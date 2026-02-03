@@ -235,6 +235,3 @@ export async function saveReportSuite(suite: {
 
   return indexPath;
 }
-
-// 向后兼容的类型导出
-export type { LightExperimentResult, SampleDataLoader } from './types.js';
