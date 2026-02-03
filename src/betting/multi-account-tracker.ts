@@ -115,24 +115,15 @@ export class MultiAccountTracker {
     entryPrice: number,
     high: number,
     low: number,
-    candleIndex: number,
-    tradeIndex: number,
-    externalC: number,
-    externalStopLoss: number
+    _candleIndex: number,
+    _tradeIndex: number,
+    _externalC: number,
+    _externalStopLoss: number
   ): Map<number, IntradayCheckResult> {
     const results = new Map<number, IntradayCheckResult>();
 
     for (const [target, account] of this.accounts) {
-      const result = account.checkIntraday(
-        direction,
-        entryPrice,
-        high,
-        low,
-        candleIndex,
-        tradeIndex,
-        externalC,
-        externalStopLoss
-      );
+      const result = account.checkIntraday(direction, entryPrice, high, low);
       results.set(target, result);
     }
 

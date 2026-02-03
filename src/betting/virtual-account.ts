@@ -14,24 +14,17 @@ import type {
   RiskControlStats,
   AccountSnapshot,
 } from '../types.js';
-
-import type {
-  TradeResultType,
-  IntradayCheckResult,
-  VirtualAccountInternalState,
-} from './virtual-account-types.js';
+import type { TradeResultType, IntradayCheckResult } from './virtual-account-types.js';
 import {
-  processIntradayTakeProfitLogic,
-  processIntradayStopLossLogic,
-  processTradeResultLogic,
-  checkIntradayLogic,
-} from './virtual-account-trade.js';
+  createTakeProfitEvent,
+  createStopLossEvent,
+  createAccountSnapshot,
+  checkIntradayConditions,
+} from './virtual-account-helpers.js';
 
 export class VirtualAccount {
   readonly targetMultiplier: number;
   private enableRiskControl: boolean;
-
-  // 核心状态
   private realizedPnL: number = 0;
   private unrealizedPnL: number = 0;
   private riskLine: number = 0;
@@ -39,22 +32,14 @@ export class VirtualAccount {
   private roundStartIndex: number = 0;
   private roundTradeCount: number = 0;
   private currentCandleIndex: number = 0;
-
-  // 外部参数
   private externalC: number = 0;
   private externalStopLoss: number = 0;
-
-  // 观察期状态
   private isObserving: boolean = true;
   private observationEndIndex: number = 0;
   private skippedTradesInObservation: number = 0;
-
-  // 事件记录
   private takeProfitEvents: TakeProfitEvent[] = [];
   private stopLossEvents: StopLossEvent[] = [];
   private realTakeProfitCount: number = 0;
-
-  // 快照记录
   private recordSnapshots: boolean = false;
   private accountSnapshots: AccountSnapshot[] = [];
 
@@ -67,40 +52,47 @@ export class VirtualAccount {
     this.recordSnapshots = true;
   }
 
-  // 核心计算方法
   getPnL(): number {
     return this.realizedPnL + this.unrealizedPnL;
   }
-
   getRealizedPnL(): number {
     return this.realizedPnL;
   }
-
   getUnrealizedPnL(): number {
     return this.unrealizedPnL;
   }
-
   getVentureCapital(): number {
     return this.unrealizedPnL - this.riskLine;
   }
-
   getRiskLine(): number {
     return this.riskLine;
+  }
+  getPositionSize(): number {
+    return this.positionSize;
+  }
+  isInObservationPeriod(): boolean {
+    return this.isObserving;
+  }
+  getTakeProfitEvents(): TakeProfitEvent[] {
+    return [...this.takeProfitEvents];
+  }
+  getStopLossEvents(): StopLossEvent[] {
+    return [...this.stopLossEvents];
+  }
+  getAccountSnapshots(): AccountSnapshot[] {
+    return [...this.accountSnapshots];
   }
 
   calculatePosition(): number {
     if (this.externalStopLoss <= 0 || this.externalC <= 0) return 0;
     const vc = this.getVentureCapital();
-    if (vc <= 0) return 0;
-    return Math.max(1, Math.floor(vc / this.externalStopLoss));
+    return vc <= 0 ? 0 : Math.max(1, Math.floor(vc / this.externalStopLoss));
   }
 
   updateRiskLine(candleIndex: number, externalC: number): void {
     this.currentCandleIndex = candleIndex;
     this.externalC = externalC;
-    if (externalC > 0 && !this.isObserving) {
-      this.riskLine -= externalC;
-    }
+    if (externalC > 0 && !this.isObserving) this.riskLine -= externalC;
   }
 
   preparePosition(externalStopLoss: number): void {
@@ -112,13 +104,9 @@ export class VirtualAccount {
     direction: 1 | -1,
     entryPrice: number,
     high: number,
-    low: number,
-    _candleIndex: number,
-    _tradeIndex: number,
-    _externalC: number,
-    _externalStopLoss: number
+    low: number
   ): IntradayCheckResult {
-    return checkIntradayLogic(
+    return checkIntradayConditions(
       direction,
       entryPrice,
       high,
@@ -138,18 +126,27 @@ export class VirtualAccount {
     externalC: number,
     externalStopLoss: number
   ): void {
-    const state = this.getInternalState();
-    processIntradayTakeProfitLogic(
-      state,
-      candleIndex,
-      tradeIndex,
-      externalC,
-      externalStopLoss,
-      this.targetMultiplier,
-      this.recordSnapshots,
-      () => this.calculatePosition()
-    );
-    this.syncFromState(state);
+    this.currentCandleIndex = candleIndex;
+    this.roundTradeCount++;
+    if (this.recordSnapshots) {
+      this.accountSnapshots.push(
+        createAccountSnapshot(
+          candleIndex,
+          tradeIndex,
+          'take_profit',
+          this.realizedPnL,
+          this.targetMultiplier,
+          this.riskLine,
+          externalStopLoss,
+          externalC,
+          this.positionSize,
+          0,
+          this.targetMultiplier - this.unrealizedPnL,
+          false
+        )
+      );
+    }
+    this.recordTakeProfit(candleIndex);
   }
 
   processIntradayStopLoss(
@@ -158,17 +155,29 @@ export class VirtualAccount {
     externalC: number,
     externalStopLoss: number
   ): void {
-    const state = this.getInternalState();
-    processIntradayStopLossLogic(
-      state,
-      candleIndex,
-      tradeIndex,
-      externalC,
-      externalStopLoss,
-      this.recordSnapshots,
-      () => this.calculatePosition()
-    );
-    this.syncFromState(state);
+    this.currentCandleIndex = candleIndex;
+    this.roundTradeCount++;
+    this.unrealizedPnL = this.riskLine;
+    if (this.recordSnapshots) {
+      this.accountSnapshots.push(
+        createAccountSnapshot(
+          candleIndex,
+          tradeIndex,
+          'stop_loss',
+          this.realizedPnL,
+          this.unrealizedPnL,
+          this.riskLine,
+          externalStopLoss,
+          externalC,
+          this.positionSize,
+          0,
+          0,
+          false,
+          { ventureCapital: 0 }
+        )
+      );
+    }
+    this.recordStopLoss(candleIndex, externalC, externalStopLoss);
   }
 
   processTradeResult(
@@ -178,65 +187,157 @@ export class VirtualAccount {
     externalC: number,
     externalStopLoss: number
   ): TradeResultType {
-    const state = this.getInternalState();
-    const result = processTradeResultLogic(
-      state,
-      pnlPercent,
-      candleIndex,
-      tradeIndex,
-      externalC,
-      externalStopLoss,
-      this.targetMultiplier,
-      this.enableRiskControl,
-      this.recordSnapshots,
-      () => this.calculatePosition(),
-      () => this.getVentureCapital()
+    this.currentCandleIndex = candleIndex;
+    this.externalC = externalC;
+    this.externalStopLoss = externalStopLoss;
+
+    if (this.enableRiskControl) {
+      if (externalC <= 0 || externalStopLoss <= 0) {
+        this.isObserving = true;
+      } else if (this.isObserving) {
+        this.isObserving = false;
+        this.observationEndIndex = candleIndex;
+        this.positionSize = this.calculatePosition();
+      }
+    }
+
+    if (this.enableRiskControl && this.isObserving) {
+      this.skippedTradesInObservation++;
+      if (this.recordSnapshots) {
+        this.accountSnapshots.push(
+          createAccountSnapshot(
+            candleIndex,
+            tradeIndex,
+            'observing',
+            this.realizedPnL,
+            this.unrealizedPnL,
+            this.riskLine,
+            externalStopLoss,
+            externalC,
+            0,
+            pnlPercent,
+            0,
+            true
+          )
+        );
+      }
+      return 'observing';
+    }
+
+    this.roundTradeCount++;
+    const actualPnl = pnlPercent * this.positionSize;
+    this.unrealizedPnL += actualPnl;
+
+    if (this.enableRiskControl && this.getVentureCapital() <= 0) {
+      this.unrealizedPnL = this.riskLine;
+      if (this.recordSnapshots) {
+        this.accountSnapshots.push(
+          createAccountSnapshot(
+            candleIndex,
+            tradeIndex,
+            'stop_loss',
+            this.realizedPnL,
+            this.unrealizedPnL,
+            this.riskLine,
+            externalStopLoss,
+            externalC,
+            this.positionSize,
+            pnlPercent,
+            actualPnl,
+            false,
+            { ventureCapital: 0 }
+          )
+        );
+      }
+      this.recordStopLoss(candleIndex, externalC, externalStopLoss);
+      return 'stop_loss';
+    }
+
+    if (this.unrealizedPnL >= this.targetMultiplier) {
+      if (this.recordSnapshots) {
+        this.accountSnapshots.push(
+          createAccountSnapshot(
+            candleIndex,
+            tradeIndex,
+            'take_profit',
+            this.realizedPnL,
+            this.targetMultiplier,
+            this.riskLine,
+            externalStopLoss,
+            externalC,
+            this.positionSize,
+            pnlPercent,
+            actualPnl,
+            false,
+            {
+              pnl: this.realizedPnL + this.targetMultiplier,
+              ventureCapital: this.targetMultiplier - this.riskLine,
+            }
+          )
+        );
+      }
+      this.recordTakeProfit(candleIndex);
+      return 'take_profit';
+    }
+
+    if (this.recordSnapshots) {
+      this.accountSnapshots.push(
+        createAccountSnapshot(
+          candleIndex,
+          tradeIndex,
+          'trade_close',
+          this.realizedPnL,
+          this.unrealizedPnL,
+          this.riskLine,
+          externalStopLoss,
+          externalC,
+          this.positionSize,
+          pnlPercent,
+          actualPnl,
+          false
+        )
+      );
+    }
+    this.positionSize = this.calculatePosition();
+    return 'none';
+  }
+
+  private recordTakeProfit(candleIndex: number): void {
+    this.takeProfitEvents.push(
+      createTakeProfitEvent(
+        this.roundStartIndex,
+        candleIndex,
+        this.roundTradeCount,
+        this.targetMultiplier,
+        this.takeProfitEvents.length + this.stopLossEvents.length
+      )
     );
-    this.syncFromState(state);
-    return result;
+    this.realTakeProfitCount++;
+    this.realizedPnL += this.targetMultiplier;
+    this.unrealizedPnL = 0;
+    this.riskLine = 0;
+    this.roundStartIndex = candleIndex;
+    this.roundTradeCount = 0;
+    this.positionSize = this.calculatePosition();
   }
 
-  private getInternalState(): VirtualAccountInternalState {
-    return {
-      realizedPnL: this.realizedPnL,
-      unrealizedPnL: this.unrealizedPnL,
-      riskLine: this.riskLine,
-      positionSize: this.positionSize,
-      roundStartIndex: this.roundStartIndex,
-      roundTradeCount: this.roundTradeCount,
-      currentCandleIndex: this.currentCandleIndex,
-      externalC: this.externalC,
-      externalStopLoss: this.externalStopLoss,
-      isObserving: this.isObserving,
-      observationEndIndex: this.observationEndIndex,
-      skippedTradesInObservation: this.skippedTradesInObservation,
-      takeProfitEvents: this.takeProfitEvents,
-      stopLossEvents: this.stopLossEvents,
-      realTakeProfitCount: this.realTakeProfitCount,
-      accountSnapshots: this.accountSnapshots,
-    };
+  private recordStopLoss(candleIndex: number, externalC: number, externalStopLoss: number): void {
+    this.stopLossEvents.push(
+      createStopLossEvent(
+        this.roundStartIndex,
+        candleIndex,
+        this.roundTradeCount,
+        this.realizedPnL,
+        this.unrealizedPnL,
+        this.riskLine,
+        externalC,
+        externalStopLoss,
+        this.takeProfitEvents.length + this.stopLossEvents.length
+      )
+    );
+    this.positionSize = this.calculatePosition();
   }
 
-  private syncFromState(state: VirtualAccountInternalState): void {
-    this.realizedPnL = state.realizedPnL;
-    this.unrealizedPnL = state.unrealizedPnL;
-    this.riskLine = state.riskLine;
-    this.positionSize = state.positionSize;
-    this.roundStartIndex = state.roundStartIndex;
-    this.roundTradeCount = state.roundTradeCount;
-    this.currentCandleIndex = state.currentCandleIndex;
-    this.externalC = state.externalC;
-    this.externalStopLoss = state.externalStopLoss;
-    this.isObserving = state.isObserving;
-    this.observationEndIndex = state.observationEndIndex;
-    this.skippedTradesInObservation = state.skippedTradesInObservation;
-    this.takeProfitEvents = state.takeProfitEvents;
-    this.stopLossEvents = state.stopLossEvents;
-    this.realTakeProfitCount = state.realTakeProfitCount;
-    this.accountSnapshots = state.accountSnapshots;
-  }
-
-  // Getters
   getState(): VirtualAccountState {
     return {
       realizedPnL: this.realizedPnL,
@@ -250,31 +351,10 @@ export class VirtualAccount {
     };
   }
 
-  getPositionSize(): number {
-    return this.positionSize;
-  }
-
-  getTakeProfitEvents(): TakeProfitEvent[] {
-    return [...this.takeProfitEvents];
-  }
-
-  getStopLossEvents(): StopLossEvent[] {
-    return [...this.stopLossEvents];
-  }
-
-  getAccountSnapshots(): AccountSnapshot[] {
-    return [...this.accountSnapshots];
-  }
-
-  isInObservationPeriod(): boolean {
-    return this.isObserving;
-  }
-
   getRiskControlStats(): RiskControlStats {
     const takeProfitCount = this.realTakeProfitCount;
     const stopLossCount = this.stopLossEvents.length;
     const total = takeProfitCount + stopLossCount;
-
     return {
       observationEndIndex: this.observationEndIndex,
       skippedTradesInObservation: this.skippedTradesInObservation,

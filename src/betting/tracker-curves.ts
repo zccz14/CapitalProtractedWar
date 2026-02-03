@@ -6,33 +6,37 @@
 
 import type { VirtualAccount } from './virtual-account.js';
 
+/** 曲线类型 */
+export type CurveType =
+  | 'realizedPnL'
+  | 'unrealizedPnL'
+  | 'pnl'
+  | 'riskLine'
+  | 'vc'
+  | 'position'
+  | 'estimatedC'
+  | 'stopLoss';
+
+/** 所有曲线类型列表 */
+const ALL_CURVE_TYPES: CurveType[] = [
+  'realizedPnL',
+  'unrealizedPnL',
+  'pnl',
+  'riskLine',
+  'vc',
+  'position',
+  'estimatedC',
+  'stopLoss',
+];
+
 /**
  * 曲线数据管理器
+ *
+ * 使用泛型结构存储所有曲线类型
  */
 export class TrackerCurves {
-  /** 已实现盈亏曲线 */
-  private realizedPnLCurves: Map<number, number[]> = new Map();
-
-  /** 未实现盈亏曲线 */
-  private unrealizedPnLCurves: Map<number, number[]> = new Map();
-
-  /** 总盈亏 PnL 曲线 */
-  private pnlCurves: Map<number, number[]> = new Map();
-
-  /** 风控线曲线 */
-  private riskLineCurves: Map<number, number[]> = new Map();
-
-  /** VC 曲线 */
-  private vcCurves: Map<number, number[]> = new Map();
-
-  /** 仓位曲线 */
-  private positionCurves: Map<number, number[]> = new Map();
-
-  /** C 值曲线 */
-  private estimatedCCurves: Map<number, number[]> = new Map();
-
-  /** StopLoss 值曲线 */
-  private stopLossCurves: Map<number, number[]> = new Map();
+  /** 曲线数据：CurveType -> (M_T -> number[]) */
+  private curves = new Map<CurveType, Map<number, number[]>>();
 
   /** 总K线数 */
   private totalCandles: number = 0;
@@ -51,16 +55,30 @@ export class TrackerCurves {
     this.recordSample = recordSample;
 
     if (recordSample) {
-      for (const target of targets) {
-        this.realizedPnLCurves.set(target, new Array(count).fill(0));
-        this.unrealizedPnLCurves.set(target, new Array(count).fill(0));
-        this.pnlCurves.set(target, new Array(count).fill(0));
-        this.riskLineCurves.set(target, new Array(count).fill(0));
-        this.vcCurves.set(target, new Array(count).fill(0));
-        this.positionCurves.set(target, new Array(count).fill(0));
-        this.estimatedCCurves.set(target, new Array(count).fill(0));
-        this.stopLossCurves.set(target, new Array(count).fill(0));
+      for (const curveType of ALL_CURVE_TYPES) {
+        const targetMap = new Map<number, number[]>();
+        for (const target of targets) {
+          targetMap.set(target, new Array(count).fill(0));
+        }
+        this.curves.set(curveType, targetMap);
       }
+    }
+  }
+
+  /**
+   * 获取指定曲线
+   */
+  private getCurve(type: CurveType, target: number): number[] | undefined {
+    return this.curves.get(type)?.get(target);
+  }
+
+  /**
+   * 更新单个曲线值
+   */
+  private setCurveValue(type: CurveType, target: number, index: number, value: number): void {
+    const curve = this.getCurve(type, target);
+    if (curve && index >= 0 && index < curve.length) {
+      curve[index] = value;
     }
   }
 
@@ -76,38 +94,16 @@ export class TrackerCurves {
   ): void {
     if (!this.recordSample) return;
 
-    const realizedPnLCurve = this.realizedPnLCurves.get(target);
-    const unrealizedPnLCurve = this.unrealizedPnLCurves.get(target);
-    const pnlCurve = this.pnlCurves.get(target);
-    const riskLineCurve = this.riskLineCurves.get(target);
-    const vcCurve = this.vcCurves.get(target);
-    const positionCurve = this.positionCurves.get(target);
-    const cCurve = this.estimatedCCurves.get(target);
-    const stopLossCurve = this.stopLossCurves.get(target);
+    this.setCurveValue('realizedPnL', target, candleIndex, account.getRealizedPnL());
+    this.setCurveValue('unrealizedPnL', target, candleIndex, account.getUnrealizedPnL());
+    this.setCurveValue('pnl', target, candleIndex, account.getPnL());
+    this.setCurveValue('riskLine', target, candleIndex, account.getRiskLine());
+    this.setCurveValue('vc', target, candleIndex, account.getVentureCapital());
+    this.setCurveValue('position', target, candleIndex, account.getPositionSize());
+    this.setCurveValue('estimatedC', target, candleIndex, externalC);
 
-    if (realizedPnLCurve && candleIndex < realizedPnLCurve.length) {
-      realizedPnLCurve[candleIndex] = account.getRealizedPnL();
-    }
-    if (unrealizedPnLCurve && candleIndex < unrealizedPnLCurve.length) {
-      unrealizedPnLCurve[candleIndex] = account.getUnrealizedPnL();
-    }
-    if (pnlCurve && candleIndex < pnlCurve.length) {
-      pnlCurve[candleIndex] = account.getPnL();
-    }
-    if (riskLineCurve && candleIndex < riskLineCurve.length) {
-      riskLineCurve[candleIndex] = account.getRiskLine();
-    }
-    if (vcCurve && candleIndex < vcCurve.length) {
-      vcCurve[candleIndex] = account.getVentureCapital();
-    }
-    if (positionCurve && candleIndex < positionCurve.length) {
-      positionCurve[candleIndex] = account.getPositionSize();
-    }
-    if (cCurve && candleIndex < cCurve.length) {
-      cCurve[candleIndex] = externalC;
-    }
-    if (stopLossCurve && candleIndex < stopLossCurve.length && externalStopLoss > 0) {
-      stopLossCurve[candleIndex] = externalStopLoss;
+    if (externalStopLoss > 0) {
+      this.setCurveValue('stopLoss', target, candleIndex, externalStopLoss);
     }
 
     this.lastCandleIndex = candleIndex;
@@ -118,11 +114,7 @@ export class TrackerCurves {
    */
   updateStopLoss(target: number, candleIndex: number, externalStopLoss: number): void {
     if (!this.recordSample) return;
-
-    const stopLossCurve = this.stopLossCurves.get(target);
-    if (stopLossCurve && candleIndex >= 0 && candleIndex < stopLossCurve.length) {
-      stopLossCurve[candleIndex] = externalStopLoss;
-    }
+    this.setCurveValue('stopLoss', target, candleIndex, externalStopLoss);
   }
 
   /**
@@ -131,39 +123,30 @@ export class TrackerCurves {
   finalize(accounts: Map<number, VirtualAccount>): void {
     if (!this.recordSample || this.lastCandleIndex < 0) return;
 
-    for (const [target, _account] of accounts) {
-      const realizedPnLCurve = this.realizedPnLCurves.get(target);
-      const unrealizedPnLCurve = this.unrealizedPnLCurves.get(target);
-      const pnlCurve = this.pnlCurves.get(target);
-      const riskLineCurve = this.riskLineCurves.get(target);
-      const vcCurve = this.vcCurves.get(target);
-      const positionCurve = this.positionCurves.get(target);
-      const cCurve = this.estimatedCCurves.get(target);
-      const stopLossCurve = this.stopLossCurves.get(target);
-
+    for (const [target] of accounts) {
+      const pnlCurve = this.getCurve('pnl', target);
       if (!pnlCurve) continue;
 
-      const lastRealizedPnL = realizedPnLCurve?.[this.lastCandleIndex] ?? 0;
-      const lastUnrealizedPnL = unrealizedPnLCurve?.[this.lastCandleIndex] ?? 0;
+      const lastRealizedPnL = this.getCurve('realizedPnL', target)?.[this.lastCandleIndex] ?? 0;
+      const lastUnrealizedPnL = this.getCurve('unrealizedPnL', target)?.[this.lastCandleIndex] ?? 0;
       const lastPnL = pnlCurve[this.lastCandleIndex] ?? 0;
-      const lastRiskLine = riskLineCurve?.[this.lastCandleIndex] ?? 0;
-      const lastPosition = positionCurve?.[this.lastCandleIndex] ?? 0;
-      const lastC = cCurve?.[this.lastCandleIndex] ?? 0;
-      const lastStopLoss = stopLossCurve?.[this.lastCandleIndex] ?? 0;
+      const lastRiskLine = this.getCurve('riskLine', target)?.[this.lastCandleIndex] ?? 0;
+      const lastPosition = this.getCurve('position', target)?.[this.lastCandleIndex] ?? 0;
+      const lastC = this.getCurve('estimatedC', target)?.[this.lastCandleIndex] ?? 0;
+      const lastStopLoss = this.getCurve('stopLoss', target)?.[this.lastCandleIndex] ?? 0;
 
       for (let i = this.lastCandleIndex + 1; i < pnlCurve.length; i++) {
-        if (realizedPnLCurve) realizedPnLCurve[i] = lastRealizedPnL;
-        if (unrealizedPnLCurve) unrealizedPnLCurve[i] = lastUnrealizedPnL;
-        pnlCurve[i] = lastPnL;
+        this.setCurveValue('realizedPnL', target, i, lastRealizedPnL);
+        this.setCurveValue('unrealizedPnL', target, i, lastUnrealizedPnL);
+        this.setCurveValue('pnl', target, i, lastPnL);
         // 风控线继续下降
-        if (riskLineCurve) riskLineCurve[i] = lastRiskLine - lastC * (i - this.lastCandleIndex);
+        const newRiskLine = lastRiskLine - lastC * (i - this.lastCandleIndex);
+        this.setCurveValue('riskLine', target, i, newRiskLine);
         // VC = UnrealizedPnL - RiskLine
-        if (vcCurve && unrealizedPnLCurve && riskLineCurve) {
-          vcCurve[i] = unrealizedPnLCurve[i] - riskLineCurve[i];
-        }
-        if (positionCurve) positionCurve[i] = lastPosition;
-        if (cCurve) cCurve[i] = lastC;
-        if (stopLossCurve) stopLossCurve[i] = lastStopLoss;
+        this.setCurveValue('vc', target, i, lastUnrealizedPnL - newRiskLine);
+        this.setCurveValue('position', target, i, lastPosition);
+        this.setCurveValue('estimatedC', target, i, lastC);
+        this.setCurveValue('stopLoss', target, i, lastStopLoss);
       }
     }
   }
@@ -189,37 +172,44 @@ export class TrackerCurves {
     return this.recordSample;
   }
 
-  // Getters
+  // ============================================
+  // Getters - 返回指定类型的所有曲线
+  // ============================================
+
+  private getCurvesOfType(type: CurveType): Map<number, number[]> {
+    return this.curves.get(type) ?? new Map();
+  }
+
   getRealizedPnLCurves(): Map<number, number[]> {
-    return this.realizedPnLCurves;
+    return this.getCurvesOfType('realizedPnL');
   }
 
   getUnrealizedPnLCurves(): Map<number, number[]> {
-    return this.unrealizedPnLCurves;
+    return this.getCurvesOfType('unrealizedPnL');
   }
 
   getPnLCurves(): Map<number, number[]> {
-    return this.pnlCurves;
+    return this.getCurvesOfType('pnl');
   }
 
   getRiskLineCurves(): Map<number, number[]> {
-    return this.riskLineCurves;
+    return this.getCurvesOfType('riskLine');
   }
 
   getVCCurves(): Map<number, number[]> {
-    return this.vcCurves;
+    return this.getCurvesOfType('vc');
   }
 
   getPositionCurves(): Map<number, number[]> {
-    return this.positionCurves;
+    return this.getCurvesOfType('position');
   }
 
   getEstimatedCCurves(): Map<number, number[]> {
-    return this.estimatedCCurves;
+    return this.getCurvesOfType('estimatedC');
   }
 
   getStopLossCurves(): Map<number, number[]> {
-    return this.stopLossCurves;
+    return this.getCurvesOfType('stopLoss');
   }
 
   /**
@@ -228,13 +218,6 @@ export class TrackerCurves {
   reset(): void {
     this.totalCandles = 0;
     this.lastCandleIndex = -1;
-    this.realizedPnLCurves.clear();
-    this.unrealizedPnLCurves.clear();
-    this.pnlCurves.clear();
-    this.riskLineCurves.clear();
-    this.vcCurves.clear();
-    this.positionCurves.clear();
-    this.estimatedCCurves.clear();
-    this.stopLossCurves.clear();
+    this.curves.clear();
   }
 }
