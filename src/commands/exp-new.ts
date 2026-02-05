@@ -7,11 +7,11 @@ export class ExpNewCommand extends Command {
   static usage = Command.Usage({
     description: '运行新范式实验 (止盈间隔分析)',
     examples: [
-      ['运行完整实验', 'cpw exp-new'],
-      ['快速模式', 'cpw exp-new --quick'],
-      ['强制重跑', 'cpw exp-new --force'],
-      ['只运行 Phase 1', 'cpw exp-new --phase=1'],
-      ['只处理指定市场组', 'cpw exp-new --market-group=gbm_vol5_drift0_n20000'],
+      ['运行完整实验', 'sandt exp-new'],
+      ['快速模式', 'sandt exp-new --quick'],
+      ['强制重跑', 'sandt exp-new --force'],
+      ['只运行 Phase 1', 'sandt exp-new --phase=1'],
+      ['只处理指定市场组', 'sandt exp-new --market-group=gbm_vol5_drift0_n20000'],
     ],
   });
 

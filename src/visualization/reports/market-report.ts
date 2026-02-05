@@ -147,7 +147,7 @@ export function generateMarketReportHTML(result: ExperimentResult, _baseDir: str
     </div>
     
     <footer>
-      资本持久战实验框架 | 市场报告 | ${new Date().toLocaleString('zh-CN')} | 耗时 ${result.elapsedMs}ms
+      Sand Table | 市场报告 | ${new Date().toLocaleString('zh-CN')} | 耗时 ${result.elapsedMs}ms
     </footer>
   </div>
 </body>

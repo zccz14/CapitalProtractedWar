@@ -1,5 +1,5 @@
 /**
- * Capital Protracted War - 资本持久战实验框架
+ * Sand Table - 资本持久战实验框架
  *
  * 核心模块导出（新范式 v2）
  */

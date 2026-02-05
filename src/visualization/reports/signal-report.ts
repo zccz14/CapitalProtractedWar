@@ -117,7 +117,7 @@ export function generateSignalDetailHTML(
     ${generateSampleLinksHTML(result, signalType, config.name)}
     
     <footer>
-      资本持久战实验框架 | ${signalType} 策略详细报告 | ${new Date().toLocaleString('zh-CN')}
+      Sand Table | ${signalType} 策略详细报告 | ${new Date().toLocaleString('zh-CN')}
     </footer>
   </div>
 </body>

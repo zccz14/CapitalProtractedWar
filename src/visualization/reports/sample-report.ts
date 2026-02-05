@@ -50,7 +50,13 @@ export function generateSampleDetailHTML(
   const overviewHTML = generateOverviewHTML(overviewData, config, targetMT);
 
   // 图表
-  const priceSignalChartSVG = generatePriceSignalChartSVG(prices, signals ?? [], trades ?? [], 900, 280);
+  const priceSignalChartSVG = generatePriceSignalChartSVG(
+    prices,
+    signals ?? [],
+    trades ?? [],
+    900,
+    280
+  );
   const baselineEquityChartSVG = baselineEquityCurve
     ? generateEquityChartSVG(baselineEquityCurve, 900, 200, '基准账户净值曲线 (仓位=1)')
     : '';
@@ -66,7 +72,19 @@ export function generateSampleDetailHTML(
 
   const multiplierChartSVG =
     unrealizedPnLCurve && vcCurve && riskCurve
-      ? generateVCChartSVG(vcCurve, unrealizedPnLCurve, riskCurve, tpMarkers, slMarkers, targetMT, 900, 280, `投注账户曲线 M_T=${targetMT}`, obsEndIdx, pnlCurve)
+      ? generateVCChartSVG(
+          vcCurve,
+          unrealizedPnLCurve,
+          riskCurve,
+          tpMarkers,
+          slMarkers,
+          targetMT,
+          900,
+          280,
+          `投注账户曲线 M_T=${targetMT}`,
+          obsEndIdx,
+          pnlCurve
+        )
       : '';
 
   // 表格
@@ -132,7 +150,7 @@ export function generateSampleDetailHTML(
       <div id="candleData" class="content"><p style="color: #666; margin: 15px 0;">显示前100根K线的详细数据</p><div class="scrollable-table">${candleDataTable}</div></div>
     </div>
     
-    <footer>资本持久战实验框架 | 样本详情报告 | ${new Date().toLocaleString('zh-CN')}</footer>
+    <footer>Sand Table | 样本详情报告 | ${new Date().toLocaleString('zh-CN')}</footer>
   </div>
   ${SAMPLE_REPORT_SCRIPT}
 </body>

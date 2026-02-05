@@ -1,6 +1,8 @@
-# 资本持久战 (CapitalProtractedWar)
+# Sand Table (沙盘) - 资本持久战实验框架
 
 一个通过蒙特卡洛模拟验证 Anti-Martingale 仓位管理策略的实验框架。
+
+> **Sand Table** 让我联想到战争游戏中的沙盘推演 (Sand Table Simulation)。资本持久战的实验框架，正是要让我们在沙盘上模拟和推演各种资本运作和战略决策。小到一个样本，大到各种市场，在各个层面上都可以进行模拟和实验，最后生成一目了然的报告，帮助我们做出更好的决策。
 
 ---
 
@@ -19,7 +21,7 @@
 
 ## 项目概述
 
-**资本持久战** 是一个基于 TypeScript 的模拟框架，旨在通过蒙特卡洛实验验证 Anti-Martingale 仓位管理策略与不同交易信号策略结合的有效性。
+**Sand Table (沙盘)** 是一个基于 TypeScript 的模拟框架，旨在通过蒙特卡洛实验验证 Anti-Martingale 仓位管理策略与不同交易信号策略结合的有效性。
 
 ### 为什么叫"持久战"？
 
@@ -535,8 +537,8 @@ M = max(资产历史最高点) / 初始资本
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-username/CapitalProtractedWar.git
-cd CapitalProtractedWar
+git clone https://github.com/zccz14/sand-table.git
+cd sand-table
 
 # 安装依赖
 npm install

@@ -1,6 +1,6 @@
 /**
- * Capital Protracted War - Core Type Definitions
- * 资本持久战实验框架 - 核心类型定义
+ * Sand Table - Core Type Definitions
+ * Sand Table - 资本持久战实验框架 - 核心类型定义
  *
  * 新范式：实验 = 市场序列 × 信号策略 × 投注策略
  *

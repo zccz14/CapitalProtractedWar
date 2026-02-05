@@ -98,7 +98,7 @@ export function generateIndexHTML(suite: ReportSuiteForIndex): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>资本持久战实验报告 - 总结</title>
+  <title>Sand Table 实验报告 - 总结</title>
   ${COMMON_STYLES}
   <style>
     .hero {
@@ -116,7 +116,7 @@ export function generateIndexHTML(suite: ReportSuiteForIndex): string {
 <body>
   <div class="container">
     <div class="hero">
-      <h1>资本持久战实验报告</h1>
+      <h1>Sand Table 实验报告</h1>
       <p>新范式：关注止盈事件的时间间隔，而非概率或期望值</p>
     </div>
     
@@ -188,7 +188,7 @@ export function generateIndexHTML(suite: ReportSuiteForIndex): string {
     </div>
     
     <footer>
-      资本持久战实验框架 (新范式 v2) | 总结报告 | ${new Date().toLocaleString('zh-CN')}
+      Sand Table (新范式 v2) | 总结报告 | ${new Date().toLocaleString('zh-CN')}
     </footer>
   </div>
 </body>

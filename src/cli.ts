@@ -13,8 +13,8 @@ import { RunCommand, ExpNewCommand, ScenariosCommand, TargetsCommand } from './c
 
 // 创建 CLI 实例
 const cli = new Cli({
-  binaryLabel: 'cpw',
-  binaryName: 'cpw',
+  binaryLabel: 'sandt',
+  binaryName: 'sandt',
   binaryVersion: '2.0.0',
 });
 

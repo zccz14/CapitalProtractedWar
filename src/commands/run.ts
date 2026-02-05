@@ -40,9 +40,9 @@ export class RunCommand extends Command {
   static usage = Command.Usage({
     description: '运行单次实验',
     examples: [
-      ['运行默认实验', 'cpw run'],
-      ['指定波动率和市场类型', 'cpw run -v 0.2 -m garch'],
-      ['完整参数示例', 'cpw run -v 0.1 -m gbm -s random -c 2000 -r 100'],
+      ['运行默认实验', 'sandt run'],
+      ['指定波动率和市场类型', 'sandt run -v 0.2 -m garch'],
+      ['完整参数示例', 'sandt run -v 0.1 -m gbm -s random -c 2000 -r 100'],
     ],
   });
 
@@ -83,7 +83,7 @@ export class RunCommand extends Command {
     const scenarioDesc = VOLATILITY_SCENARIOS[volatility] || `σ=${(volatility * 100).toFixed(1)}%`;
 
     console.log('='.repeat(60));
-    console.log('资本持久战实验 (新范式)');
+    console.log('Sand Table 实验 (新范式)');
     console.log('='.repeat(60));
     console.log(`市场类型: ${this.market}`);
     console.log(`波动率: ${(volatility * 100).toFixed(1)}% (${scenarioDesc})`);

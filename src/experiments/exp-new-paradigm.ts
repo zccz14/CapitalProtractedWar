@@ -85,7 +85,7 @@ export async function runExperiment(options: ExperimentOptions): Promise<string>
 
   // 打印实验信息
   console.log('╔══════════════════════════════════════════════════════════════════╗');
-  console.log('║          资本持久战实验 - 新范式：止盈间隔评估                   ║');
+  console.log('║          Sand Table 实验 - 新范式：止盈间隔评估                  ║');
   console.log('╚══════════════════════════════════════════════════════════════════╝');
 
   // 构建实验配置
