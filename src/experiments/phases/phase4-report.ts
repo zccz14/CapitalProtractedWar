@@ -31,7 +31,6 @@ export interface Phase4Options {
   config: FullExperimentConfig;
   force: boolean;
   verbose: boolean;
-  marketGroup?: string;
   noOpen: boolean;
 }
 
@@ -43,7 +42,7 @@ export interface Phase4Result {
  * 执行 Phase 4: 生成 HTML 报告（流式处理）
  */
 export async function runPhase4(options: Phase4Options): Promise<Phase4Result> {
-  const { config, verbose, marketGroup, noOpen } = options;
+  const { config, verbose, noOpen } = options;
   const { outputDir } = config;
 
   console.log('Phase 4: 生成 HTML 报告（流式处理）');
@@ -56,16 +55,16 @@ export async function runPhase4(options: Phase4Options): Promise<Phase4Result> {
     for (const drift of config.drifts) {
       const marketGroupId = `gbm_vol${(volatility * 100).toFixed(0)}_drift${(drift * 100).toFixed(0)}_n${config.candleCount}`;
 
-      if (marketGroup && marketGroupId !== marketGroup) {
-        continue;
-      }
-
       // 只收集聚合结果，不读取样本数据
       const signalResults: AggregatedSignalResult[] = [];
       // 收集各信号策略的样本索引
       const sampleIndicesMap = new Map<
         string,
-        { best: { marketId: string; baselinePnL: number }; median: { marketId: string; baselinePnL: number }; worst: { marketId: string; baselinePnL: number } }
+        {
+          best: { marketId: string; baselinePnL: number };
+          median: { marketId: string; baselinePnL: number };
+          worst: { marketId: string; baselinePnL: number };
+        }
       >();
 
       for (const signalConfig of config.signals) {

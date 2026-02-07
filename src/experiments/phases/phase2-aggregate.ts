@@ -29,7 +29,6 @@ export interface Phase2Options {
   config: FullExperimentConfig;
   force: boolean;
   verbose: boolean;
-  marketGroup?: string;
 }
 
 export interface Phase2Result {
@@ -42,7 +41,7 @@ export interface Phase2Result {
  * 执行 Phase 2: 聚合结果
  */
 export async function runPhase2(options: Phase2Options): Promise<Phase2Result> {
-  const { config, force, verbose, marketGroup } = options;
+  const { config, force, verbose } = options;
   const { outputDir, baseSeed, monteCarloRuns } = config;
 
   let totalAggregations = 0;
@@ -54,11 +53,6 @@ export async function runPhase2(options: Phase2Options): Promise<Phase2Result> {
   for (const volatility of config.volatilities) {
     for (const drift of config.drifts) {
       const marketGroupId = `gbm_vol${(volatility * 100).toFixed(0)}_drift${(drift * 100).toFixed(0)}_n${config.candleCount}`;
-
-      // 检查是否只处理指定市场组
-      if (marketGroup && marketGroupId !== marketGroup) {
-        continue;
-      }
 
       for (const signalConfig of config.signals) {
         const signalId = generateSignalId(signalConfig);

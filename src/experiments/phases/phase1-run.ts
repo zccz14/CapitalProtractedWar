@@ -22,7 +22,6 @@ export interface Phase1Options {
   config: FullExperimentConfig;
   force: boolean;
   verbose: boolean;
-  marketGroup?: string;
 }
 
 export interface Phase1Result {
@@ -35,7 +34,7 @@ export interface Phase1Result {
  * 执行 Phase 1: 运行所有组合
  */
 export async function runPhase1(options: Phase1Options): Promise<Phase1Result> {
-  const { config, force, verbose, marketGroup } = options;
+  const { config, force, verbose } = options;
   const { outputDir, baseSeed, monteCarloRuns } = config;
 
   let totalRuns = 0;
@@ -50,12 +49,6 @@ export async function runPhase1(options: Phase1Options): Promise<Phase1Result> {
 
   for (const volatility of config.volatilities) {
     for (const drift of config.drifts) {
-      // 检查是否只处理指定市场组
-      const testMarketGroupId = `gbm_vol${(volatility * 100).toFixed(0)}_drift${(drift * 100).toFixed(0)}_n${config.candleCount}`;
-      if (marketGroup && testMarketGroupId !== marketGroup) {
-        continue;
-      }
-
       for (let seedOffset = 0; seedOffset < monteCarloRuns; seedOffset++) {
         const marketConfig: MarketConfig = {
           type: 'gbm',

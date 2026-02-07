@@ -151,14 +151,10 @@ export interface AggregatedResultFile {
  * 实验运行选项
  */
 export interface ExperimentOptions {
-  /** 快速模式 */
-  quick: boolean;
   /** 强制重跑 */
   force: boolean;
   /** 运行的阶段 */
   phases: number[];
-  /** 指定市场组 */
-  marketGroup?: string;
   /** 输出目录 */
   outputDir: string;
   /** 不自动打开报告 */

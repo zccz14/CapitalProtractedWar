@@ -606,3 +606,31 @@ export const VOLATILITY_SCENARIOS: Record<number, string> = {
   1.0: 'BTC 20x杠杆',
   2.0: 'BTC 50x杠杆',
 };
+
+// ============================================
+// Sand Table 配置文件类型
+// ============================================
+
+/**
+ * Sand Table 配置文件接口
+ *
+ * 用于定义实验集合的配置，从 sandt.config.json 加载
+ */
+export interface ISandTableConfig {
+  /** 波动率列表 */
+  volatilities: number[];
+  /** 漂移率列表 */
+  drifts: number[];
+  /** K 线数量 */
+  candleCount: number;
+  /** 蒙特卡洛运行次数 */
+  monteCarloRuns: number;
+  /** 基础种子 */
+  baseSeed: number;
+  /** 信号策略列表 */
+  signals: SignalStrategyConfig[];
+  /** 投注策略配置 */
+  betting: BettingStrategyConfig;
+  /** 输出目录 (相对于配置文件位置) */
+  outputDir: string;
+}

@@ -1,0 +1,20 @@
+{
+  "volatilities": [0.05, 0.2],
+  "drifts": [0, 0.1],
+  "candleCount": 5000,
+  "monteCarloRuns": 50,
+  "baseSeed": 42,
+  "signals": [
+    { "type": "trend_following", "params": { "fastPeriod": 5, "slowPeriod": 20 } },
+    { "type": "mean_reversion", "params": { "period": 20, "threshold": 2 } },
+    { "type": "breakout", "params": { "period": 20, "threshold": 0 } },
+    { "type": "boll_reversion", "params": { "period": 20, "stdDev": 2 } },
+    { "type": "breakout_4", "params": { "lookbackCount": 4 } },
+    { "type": "random", "params": { "tradeProbability": 0.1, "avgHoldingPeriod": 10, "seed": 42 } }
+  ],
+  "betting": {
+    "takeProfitTargets": [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024],
+    "tradingCostRate": 0.0003
+  },
+  "outputDir": "./results/quick"
+}

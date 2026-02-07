@@ -14,64 +14,8 @@
  * - 只为代表性样本生成完整曲线数据
  */
 
-import {
-  DEFAULT_TAKE_PROFIT_TARGETS,
-  type SignalStrategyConfig,
-  type BettingStrategyConfig,
-} from '../types.js';
 import type { ExperimentOptions, FullExperimentConfig } from '../cache/types.js';
 import { runPhase1, runPhase2, runPhase3, runPhase4 } from './phases/index.js';
-
-// ============================================
-// 实验配置
-// ============================================
-
-// 测试的信号策略
-const SIGNAL_STRATEGIES: SignalStrategyConfig[] = [
-  { type: 'trend_following', params: { fastPeriod: 5, slowPeriod: 20 } },
-  { type: 'mean_reversion', params: { period: 20, threshold: 2 } },
-  { type: 'breakout', params: { period: 20, threshold: 0 } },
-  { type: 'boll_reversion', params: { period: 20, stdDev: 2 } },
-  { type: 'breakout_4', params: { lookbackCount: 4 } },
-  { type: 'random', params: { tradeProbability: 0.1, avgHoldingPeriod: 10, seed: 42 } },
-];
-
-// 测试的波动率场景
-const VOLATILITY_SCENARIOS = [
-  0.05, // 5% - 股票10x / BTC现货
-  0.1, // 10% - BTC 2x / 山寨币现货
-  0.2, // 20% - BTC 5x / MEME币
-  0.5, // 50% - BTC 10x / 极端MEME
-  1.0, // 100% - BTC 20x
-];
-
-// 测试的漂移率场景
-const DRIFT_SCENARIOS = [
-  0, // 中性市场
-  0.05, // 5% 年化
-  0.1, // 10% 年化
-  0.2, // 20% 年化
-  0.5, // 50% 年化（强牛市）
-];
-
-// 完整实验参数
-const FULL_CANDLE_COUNT = 20000; // K线数量（2万根）
-const FULL_MONTE_CARLO_RUNS = 1000; // 蒙特卡洛运行次数
-
-// 快速测试参数
-const QUICK_CANDLE_COUNT = 5000; // K线数量（5千根）
-const QUICK_MONTE_CARLO_RUNS = 50; // 蒙特卡洛运行次数
-const QUICK_VOLATILITY_SCENARIOS = [0.05, 0.2];
-const QUICK_DRIFT_SCENARIOS = [0, 0.1];
-
-// 投注策略配置
-const BETTING_CONFIG: BettingStrategyConfig = {
-  takeProfitTargets: DEFAULT_TAKE_PROFIT_TARGETS,
-  tradingCostRate: 0.0003, // 交易成本 0.03%
-};
-
-// 基础种子
-const BASE_SEED = 42;
 
 // ============================================
 // 主实验函数
@@ -80,40 +24,19 @@ const BASE_SEED = 42;
 /**
  * 运行新范式实验
  */
-export async function runExperiment(options: ExperimentOptions): Promise<string> {
-  const { quick, force, phases, marketGroup, outputDir, noOpen, verbose } = options;
+export async function runExperiment(
+  config: FullExperimentConfig,
+  options: ExperimentOptions
+): Promise<string> {
+  const { force, phases, outputDir, noOpen, verbose } = options;
 
   // 打印实验信息
   console.log('╔══════════════════════════════════════════════════════════════════╗');
   console.log('║          Sand Table 实验 - 新范式：止盈间隔评估                  ║');
   console.log('╚══════════════════════════════════════════════════════════════════╝');
 
-  // 构建实验配置
-  const config: FullExperimentConfig = quick
-    ? {
-        volatilities: QUICK_VOLATILITY_SCENARIOS,
-        drifts: QUICK_DRIFT_SCENARIOS,
-        candleCount: QUICK_CANDLE_COUNT,
-        monteCarloRuns: QUICK_MONTE_CARLO_RUNS,
-        baseSeed: BASE_SEED,
-        signals: SIGNAL_STRATEGIES,
-        betting: BETTING_CONFIG,
-        outputDir,
-      }
-    : {
-        volatilities: VOLATILITY_SCENARIOS,
-        drifts: DRIFT_SCENARIOS,
-        candleCount: FULL_CANDLE_COUNT,
-        monteCarloRuns: FULL_MONTE_CARLO_RUNS,
-        baseSeed: BASE_SEED,
-        signals: SIGNAL_STRATEGIES,
-        betting: BETTING_CONFIG,
-        outputDir,
-      };
-
   // 打印配置
-  console.log(`\n模式: ${quick ? '快速测试' : '完整实验'}`);
-  console.log(`K线数: ${config.candleCount} | MC次数: ${config.monteCarloRuns}`);
+  console.log(`\nK线数: ${config.candleCount} | MC次数: ${config.monteCarloRuns}`);
   console.log(
     `波动率场景: ${config.volatilities.map((v) => `${(v * 100).toFixed(0)}%`).join(', ')}`
   );
@@ -121,9 +44,6 @@ export async function runExperiment(options: ExperimentOptions): Promise<string>
   console.log(`信号策略: ${config.signals.map((s) => s.type).join(', ')}`);
   console.log(`止盈线: ${config.betting.takeProfitTargets.join(', ')}`);
   console.log(`输出目录: ${outputDir}`);
-  if (marketGroup) {
-    console.log(`指定市场组: ${marketGroup}`);
-  }
   if (force) {
     console.log(`强制模式: 忽略所有缓存`);
   }
@@ -136,28 +56,28 @@ export async function runExperiment(options: ExperimentOptions): Promise<string>
   // Phase 1: 运行所有组合
   if (phases.includes(1)) {
     console.log('═'.repeat(70));
-    await runPhase1({ config, force, verbose, marketGroup });
+    await runPhase1({ config, force, verbose });
     console.log('');
   }
 
   // Phase 2: 聚合结果
   if (phases.includes(2)) {
     console.log('═'.repeat(70));
-    await runPhase2({ config, force, verbose, marketGroup });
+    await runPhase2({ config, force, verbose });
     console.log('');
   }
 
   // Phase 3: 生成代表性样本详细数据
   if (phases.includes(3)) {
     console.log('═'.repeat(70));
-    await runPhase3({ config, force, verbose, marketGroup });
+    await runPhase3({ config, force, verbose });
     console.log('');
   }
 
   // Phase 4: 生成 HTML 报告
   if (phases.includes(4)) {
     console.log('═'.repeat(70));
-    const result = await runPhase4({ config, force, verbose, marketGroup, noOpen });
+    const result = await runPhase4({ config, force, verbose, noOpen });
     reportPath = result.reportPath;
     console.log('');
   }

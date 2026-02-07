@@ -1,151 +1,165 @@
 import { Command, Option } from 'clipanion';
-import { runExperiment } from '../engine/index.js';
-import { printReport, exportToJSON } from '../analysis/index.js';
-import { saveReport } from '../visualization/index.js';
-import {
-  DEFAULT_TAKE_PROFIT_TARGETS,
-  VOLATILITY_SCENARIOS,
-  type ExperimentConfig,
-  type MarketType,
-  type SignalStrategyType,
-} from '../types.js';
 import * as fs from 'fs';
+import * as path from 'path';
+import { runExperiment } from '../experiments/exp-new-paradigm.js';
+import type { ISandTableConfig } from '../types.js';
+import type { ExperimentOptions, FullExperimentConfig } from '../cache/types.js';
 
-function getSignalParams(
-  signalType: string,
-  seed?: number
-): Record<string, number | string | boolean> {
-  switch (signalType) {
-    case 'trend_following':
-      return { shortPeriod: 5, longPeriod: 20 };
-    case 'mean_reversion':
-      return { period: 20, deviationThreshold: 0.02 };
-    case 'breakout':
-      return { lookbackPeriod: 20, breakoutThreshold: 0.01 };
-    case 'breakout_4':
-      return { lookbackCount: 4 };
-    case 'random':
-    default:
-      return {
-        tradeProbability: 0.1,
-        avgHoldingPeriod: 10,
-        ...(seed !== undefined ? { seed } : {}),
-      };
+const DEFAULT_CONFIG_FILENAME = 'sandt.config.json';
+
+/**
+ * 加载并验证配置文件
+ */
+function loadConfig(configPath: string): { config?: ISandTableConfig; error?: string } {
+  if (!fs.existsSync(configPath)) {
+    return {
+      error:
+        `配置文件不存在: ${configPath}\n` +
+        `请创建配置文件或使用 -c 参数指定配置文件路径。\n` +
+        `参考 sandt.config.example.json 创建配置文件。`,
+    };
   }
+
+  const content = fs.readFileSync(configPath, 'utf-8');
+  let config: ISandTableConfig;
+
+  try {
+    config = JSON.parse(content);
+  } catch {
+    return { error: `配置文件解析失败: ${configPath}\n请检查 JSON 格式是否正确。` };
+  }
+
+  // 基本验证
+  const requiredFields = [
+    'volatilities',
+    'drifts',
+    'candleCount',
+    'monteCarloRuns',
+    'baseSeed',
+    'signals',
+    'betting',
+    'outputDir',
+  ] as const;
+
+  for (const field of requiredFields) {
+    if (config[field] === undefined) {
+      return { error: `配置文件缺少必需字段: ${field}` };
+    }
+  }
+
+  if (!Array.isArray(config.volatilities) || config.volatilities.length === 0) {
+    return { error: 'volatilities 必须是非空数组' };
+  }
+
+  if (!Array.isArray(config.drifts) || config.drifts.length === 0) {
+    return { error: 'drifts 必须是非空数组' };
+  }
+
+  if (!Array.isArray(config.signals) || config.signals.length === 0) {
+    return { error: 'signals 必须是非空数组' };
+  }
+
+  if (!config.betting.takeProfitTargets || config.betting.takeProfitTargets.length === 0) {
+    return { error: 'betting.takeProfitTargets 必须是非空数组' };
+  }
+
+  return { config };
+}
+
+/**
+ * 将 ISandTableConfig 转换为 FullExperimentConfig
+ */
+function toFullExperimentConfig(
+  config: ISandTableConfig,
+  resolvedOutputDir: string
+): FullExperimentConfig {
+  return {
+    volatilities: config.volatilities,
+    drifts: config.drifts,
+    candleCount: config.candleCount,
+    monteCarloRuns: config.monteCarloRuns,
+    baseSeed: config.baseSeed,
+    signals: config.signals,
+    betting: config.betting,
+    outputDir: resolvedOutputDir,
+  };
 }
 
 export class RunCommand extends Command {
   static paths = [['run']];
 
   static usage = Command.Usage({
-    description: '运行单次实验',
+    description: '运行实验集合',
     examples: [
-      ['运行默认实验', 'sandt run'],
-      ['指定波动率和市场类型', 'sandt run -v 0.2 -m garch'],
-      ['完整参数示例', 'sandt run -v 0.1 -m gbm -s random -c 2000 -r 100'],
+      ['使用默认配置文件运行', 'sandt run'],
+      ['指定配置文件', 'sandt run -c ./my-config.json'],
+      ['强制重跑，忽略缓存', 'sandt run -f'],
+      ['只运行特定阶段', 'sandt run -p 1 -p 2'],
+      ['运行并生成报告但不自动打开', 'sandt run --no-open'],
     ],
   });
 
-  volatility = Option.String('-v,--volatility', '0.1', {
-    description: '等效波动率 (0-1)',
+  config = Option.String('-c,--config', DEFAULT_CONFIG_FILENAME, {
+    description: '配置文件路径 (默认: ./sandt.config.json)',
   });
 
-  market = Option.String('-m,--market', 'gbm', {
-    description: '市场类型 (gbm|garch|trending|mean_reverting)',
+  force = Option.Boolean('-f,--force', false, {
+    description: '强制重跑，忽略缓存',
   });
 
-  signal = Option.String('-s,--signal', 'random', {
-    description: '信号策略 (trend_following|mean_reversion|breakout|breakout_4|random)',
+  phases = Option.Array('-p,--phase', {
+    description: '指定运行阶段 (1=运行, 2=聚合, 3=样本, 4=报告)，可多次指定',
   });
 
-  candles = Option.String('-c,--candles', '2000', {
-    description: 'K线数量',
+  noOpen = Option.Boolean('--no-open', false, {
+    description: '不自动打开报告',
   });
 
-  runs = Option.String('-r,--runs', '100', {
-    description: '蒙特卡洛次数',
+  verbose = Option.Boolean('-v,--verbose', false, {
+    description: '详细输出',
   });
 
-  output = Option.String('-o,--output', './results/custom', {
-    description: '输出目录',
-  });
+  async execute(): Promise<number> {
+    // 解析配置文件路径
+    const configPath = path.resolve(process.cwd(), this.config);
 
-  seed = Option.String('--seed', {
-    description: '随机种子',
-  });
+    // 加载配置
+    const result = loadConfig(configPath);
+    if (result.error) {
+      console.error(`错误: ${result.error}`);
+      return 1;
+    }
+    const sandTableConfig = result.config!;
 
-  async execute(): Promise<void> {
-    const volatility = parseFloat(this.volatility);
-    const candleCount = parseInt(this.candles);
-    const monteCarloRuns = parseInt(this.runs);
-    const seed = this.seed ? parseInt(this.seed) : undefined;
+    // 解析输出目录（相对于配置文件位置）
+    const configDir = path.dirname(configPath);
+    const resolvedOutputDir = path.resolve(configDir, sandTableConfig.outputDir);
 
-    const scenarioDesc = VOLATILITY_SCENARIOS[volatility] || `σ=${(volatility * 100).toFixed(1)}%`;
+    // 转换为 FullExperimentConfig
+    const fullConfig = toFullExperimentConfig(sandTableConfig, resolvedOutputDir);
 
-    console.log('='.repeat(60));
-    console.log('Sand Table 实验 (新范式)');
-    console.log('='.repeat(60));
-    console.log(`市场类型: ${this.market}`);
-    console.log(`波动率: ${(volatility * 100).toFixed(1)}% (${scenarioDesc})`);
-    console.log(`信号策略: ${this.signal}`);
-    console.log(`K线数量: ${candleCount}`);
-    console.log(`蒙特卡洛次数: ${monteCarloRuns}`);
-    console.log(`止盈线: ${DEFAULT_TAKE_PROFIT_TARGETS.join(', ')}`);
-    console.log('='.repeat(60));
+    // 解析阶段参数
+    const phasesToRun = this.phases ? this.phases.map((p) => parseInt(p, 10)) : [1, 2, 3, 4];
 
-    const config: ExperimentConfig = {
-      name: `custom_${this.market}_${this.signal}_v${(volatility * 100).toFixed(0)}`,
-      market: {
-        type: this.market as MarketType,
-        volatility,
-        candleCount,
-        seed,
-        // GARCH 默认参数
-        ...(this.market === 'garch'
-          ? {
-              garchOmega: 0.00001,
-              garchAlpha: 0.1,
-              garchBeta: 0.85,
-            }
-          : {}),
-        // 趋势市场默认参数
-        ...(this.market === 'trending'
-          ? {
-              drift: 0.0005,
-            }
-          : {}),
-        // 均值回归市场默认参数
-        ...(this.market === 'mean_reverting'
-          ? {
-              meanReversionSpeed: 0.1,
-              meanReversionTarget: 100,
-            }
-          : {}),
-      },
-      signals: [
-        {
-          type: this.signal as SignalStrategyType,
-          params: getSignalParams(this.signal, seed),
-        },
-      ],
-      betting: {
-        takeProfitTargets: DEFAULT_TAKE_PROFIT_TARGETS,
-        tradingCostRate: 0.0003, // 0.03%
-      },
-      monteCarloRuns,
+    // 验证阶段参数
+    for (const phase of phasesToRun) {
+      if (phase < 1 || phase > 4 || isNaN(phase)) {
+        console.error(`错误: 无效的阶段参数: ${phase}，有效值为 1-4`);
+        return 1;
+      }
+    }
+
+    // 构建实验选项
+    const options: ExperimentOptions = {
+      force: this.force,
+      phases: phasesToRun,
+      outputDir: resolvedOutputDir,
+      noOpen: this.noOpen,
+      verbose: this.verbose,
     };
 
-    console.log('\n运行中...');
-    const result = await runExperiment(config);
-
-    printReport(result);
-
-    // 保存结果
-    if (!fs.existsSync(this.output)) {
-      fs.mkdirSync(this.output, { recursive: true });
-    }
-    await saveReport(result, this.output);
-    fs.writeFileSync(`${this.output}/result.json`, exportToJSON(result), 'utf-8');
-    console.log(`\n结果已保存到: ${this.output}`);
+    // 运行实验
+    await runExperiment(fullConfig, options);
+    return 0;
   }
 }

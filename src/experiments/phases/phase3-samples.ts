@@ -23,7 +23,6 @@ export interface Phase3Options {
   config: FullExperimentConfig;
   force: boolean;
   verbose: boolean;
-  marketGroup?: string;
 }
 
 export interface Phase3Result {
@@ -36,7 +35,7 @@ export interface Phase3Result {
  * 执行 Phase 3: 生成代表性样本详细数据
  */
 export async function runPhase3(options: Phase3Options): Promise<Phase3Result> {
-  const { config, force, verbose, marketGroup } = options;
+  const { config, force, verbose } = options;
   const { outputDir } = config;
 
   let totalSamples = 0;
@@ -48,11 +47,6 @@ export async function runPhase3(options: Phase3Options): Promise<Phase3Result> {
   for (const volatility of config.volatilities) {
     for (const drift of config.drifts) {
       const marketGroupId = `gbm_vol${(volatility * 100).toFixed(0)}_drift${(drift * 100).toFixed(0)}_n${config.candleCount}`;
-
-      // 检查是否只处理指定市场组
-      if (marketGroup && marketGroupId !== marketGroup) {
-        continue;
-      }
 
       for (const signalConfig of config.signals) {
         const signalId = generateSignalId(signalConfig);
