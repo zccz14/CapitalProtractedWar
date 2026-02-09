@@ -15,7 +15,7 @@
  */
 
 import type { ExperimentOptions, FullExperimentConfig } from '../cache/types.js';
-import { runPhase1, runPhase2, runPhase3, runPhase4 } from './phases/index.js';
+import { runPhase0, runPhase1, runPhase2, runPhase3, runPhase4 } from './phases/index.js';
 
 // ============================================
 // 主实验函数
@@ -59,6 +59,13 @@ export async function runExperiment(
 
   const startTime = Date.now();
   let reportPath = '';
+
+  // Phase 0: 生成市场序列
+  if (phases.includes(0)) {
+    console.log('═'.repeat(70));
+    await runPhase0({ config, force, verbose });
+    console.log('');
+  }
 
   // Phase 1: 运行所有组合
   if (phases.includes(1)) {

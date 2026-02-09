@@ -30,8 +30,7 @@ export type { EvaluationOutput, SingleRunResult } from './engine/index.js';
 export {
   formatReport,
   printReport,
-  printComparisonTable,
-  extractComparisonData,
+  printComparisonReport,
   exportToJSON,
   exportToCSV,
   calculateHistogram,

@@ -84,13 +84,13 @@ export function generateBettingId(config: BettingStrategyConfig): string {
  * 生成配置哈希
  */
 export function generateConfigHash(
-  market: MarketConfig,
+  seriesId: string,
   signal: SignalStrategyConfig,
   betting: BettingStrategyConfig
 ): string {
   const content = JSON.stringify(
-    { market, signal, betting },
-    Object.keys({ market, signal, betting }).sort()
+    { seriesId, signal, betting },
+    Object.keys({ seriesId, signal, betting }).sort()
   );
   return crypto.createHash('sha256').update(content).digest('hex').slice(0, 16);
 }
@@ -193,13 +193,13 @@ export function ensureDir(dirPath: string): void {
 export function writeRunResult(
   filePath: string,
   config: {
-    market: MarketConfig;
+    seriesId: string;
     signal: SignalStrategyConfig;
     betting: BettingStrategyConfig;
   },
   result: RunStats
 ): void {
-  const configHash = generateConfigHash(config.market, config.signal, config.betting);
+  const configHash = generateConfigHash(config.seriesId, config.signal, config.betting);
 
   const file: RunResultFile = {
     version: ENGINE_VERSION,

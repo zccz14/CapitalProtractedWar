@@ -513,8 +513,11 @@ export interface ExperimentConfig {
   /** 实验描述 */
   description?: string;
 
-  /** 市场配置 */
-  market: MarketConfig;
+  /** 通用展示属性（替代原 market 中的 volatility/drift 等语义字段） */
+  metadata: Record<string, string>;
+
+  /** K 线数量（报告需要展示） */
+  candleCount: number;
 
   /** 信号策略配置列表（同一市场下测试多个策略） */
   signals: SignalStrategyConfig[];

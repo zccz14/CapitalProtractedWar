@@ -116,7 +116,7 @@ export class RunCommand extends Command {
   });
 
   phases = Option.Array('-p,--phase', {
-    description: '指定运行阶段 (1=运行, 2=聚合, 3=样本, 4=报告)，可多次指定',
+    description: '指定运行阶段 (0=生成市场, 1=运行, 2=聚合, 3=样本, 4=报告)，可多次指定',
   });
 
   noOpen = Option.Boolean('--no-open', false, {
@@ -147,12 +147,12 @@ export class RunCommand extends Command {
     const fullConfig = toFullExperimentConfig(sandTableConfig, resolvedOutputDir);
 
     // 解析阶段参数
-    const phasesToRun = this.phases ? this.phases.map((p) => parseInt(p, 10)) : [1, 2, 3, 4];
+    const phasesToRun = this.phases ? this.phases.map((p) => parseInt(p, 10)) : [0, 1, 2, 3, 4];
 
     // 验证阶段参数
     for (const phase of phasesToRun) {
-      if (phase < 1 || phase > 4 || isNaN(phase)) {
-        console.error(`错误: 无效的阶段参数: ${phase}，有效值为 1-4`);
+      if (phase < 0 || phase > 4 || isNaN(phase)) {
+        console.error(`错误: 无效的阶段参数: ${phase}，有效值为 0-4`);
         return 1;
       }
     }

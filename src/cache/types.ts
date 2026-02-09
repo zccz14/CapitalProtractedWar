@@ -3,7 +3,6 @@
  */
 
 import type {
-  MarketConfig,
   MarketTemplate,
   SignalStrategyConfig,
   BettingStrategyConfig,
@@ -58,7 +57,7 @@ export interface RunResultFile {
   createdAt: number;
   /** 配置快照 */
   config: {
-    market: MarketConfig;
+    seriesId: string;
     signal: SignalStrategyConfig;
     betting: BettingStrategyConfig;
   };

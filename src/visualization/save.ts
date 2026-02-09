@@ -46,7 +46,7 @@ export async function saveReportSuiteStreaming(
   const totalGroups = lightResults.length;
   for (let i = 0; i < lightResults.length; i++) {
     const lightResult = lightResults[i];
-    const marketGroupId = buildMarketGroupId(lightResult);
+    const marketGroupId = lightResult.groupId;
 
     console.log(`  处理市场组 ${i + 1}/${totalGroups}: ${lightResult.config.name}`);
 
@@ -66,14 +66,6 @@ export async function saveReportSuiteStreaming(
   }
 
   return indexPath;
-}
-
-/**
- * 构建市场组 ID
- */
-function buildMarketGroupId(result: LightExperimentResult): string {
-  const { volatility, drift, candleCount } = result.config.market;
-  return `gbm_vol${(volatility * 100).toFixed(0)}_drift${((drift ?? 0) * 100).toFixed(0)}_n${candleCount}`;
 }
 
 /**
@@ -189,9 +181,9 @@ async function saveMarketGroupReports(
             config.name,
             originalRunIndex,
             {
-              volatility: config.market.volatility,
-              drift: config.market.drift,
-              candleCount: config.market.candleCount,
+              name: config.name,
+              description: config.description,
+              candleCount: config.candleCount,
             },
             outputDir,
             targetMT

@@ -1,11 +1,11 @@
 /**
  * 单次运行函数（用于缓存系统）
  *
- * 这是缓存系统的核心函数，用于执行单个 (market, signal, betting) 组合的运行。
+ * 这是缓存系统的核心函数，用于执行单个 (candles, signal, betting) 组合的运行。
  */
 
 import type {
-  MarketConfig,
+  Candle,
   SignalStrategyConfig,
   BettingStrategyConfig,
   SampleRunData,
@@ -13,7 +13,6 @@ import type {
 import type { RunStats, TakeProfitStatsSummary } from '../cache/types.js';
 import { MultiAccountTracker } from '../betting/index.js';
 import { createSignalStrategy } from '../signal/index.js';
-import { generateMarket } from '../market/generator.js';
 import { evaluateSignalStrategy } from './backtest-engine.js';
 
 /**
@@ -29,33 +28,30 @@ export interface SingleRunResult {
 /**
  * 运行单次实验
  *
- * 这是缓存系统的核心函数，用于执行单个 (market, signal, betting) 组合的运行。
+ * 这是缓存系统的核心函数，用于执行单个 (candles, signal, betting) 组合的运行。
  *
- * @param marketConfig - 市场配置（包含种子）
+ * @param candles - 市场 K 线序列（由 Phase 0 预生成）
  * @param signalConfig - 信号策略配置
  * @param bettingConfig - 投注策略配置
  * @param recordSample - 是否记录完整曲线数据
  * @returns 运行结果
  */
 export function runOnce(
-  marketConfig: MarketConfig,
+  candles: Candle[],
   signalConfig: SignalStrategyConfig,
   bettingConfig: BettingStrategyConfig,
   recordSample: boolean = false
 ): SingleRunResult {
-  // 1. 生成市场序列
-  const candles = generateMarket(marketConfig);
-
-  // 2. 创建信号策略
+  // 1. 创建信号策略
   const strategy = createSignalStrategy(signalConfig);
 
-  // 3. 创建多账户追踪器
+  // 2. 创建多账户追踪器
   const tracker = new MultiAccountTracker(bettingConfig);
 
-  // 4. 评估
+  // 3. 评估
   const { result, sampleData } = evaluateSignalStrategy(candles, strategy, tracker, recordSample);
 
-  // 5. 转换为缓存格式
+  // 4. 转换为缓存格式
   const takeProfitStats: TakeProfitStatsSummary[] = [];
   for (const [target, stat] of result.takeProfitStats) {
     takeProfitStats.push({

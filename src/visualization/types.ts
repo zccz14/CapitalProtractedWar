@@ -16,6 +16,8 @@ import type { SampleIndex } from '../cache/types.js';
  */
 export interface LightExperimentResult {
   config: ExperimentResult['config'];
+  /** 市场组 ID（用于加载样本数据和文件路径） */
+  groupId: string;
   signalResults: AggregatedSignalResult[];
   monteCarloRuns: number;
   candlesPerRun: number;
@@ -63,7 +65,6 @@ export type SampleDataLoader = (
  */
 export interface MarketGroupContext {
   marketGroupId: string;
-  volatility: number;
-  drift: number;
+  metadata: Record<string, string>;
   candleCount: number;
 }

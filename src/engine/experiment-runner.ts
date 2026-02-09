@@ -10,6 +10,7 @@
 import type {
   ExperimentConfig,
   ExperimentResult,
+  MarketConfig,
   SignalEvaluationResult,
   MonteCarloRunResult,
   AggregatedSignalResult,
@@ -24,13 +25,21 @@ import { generateMarket } from '../market/generator.js';
 import { evaluateSignalStrategy } from './backtest-engine.js';
 
 /**
+ * 旧版实验配置（包含 market 字段）
+ * @deprecated 使用新的 Phase 0-4 管线代替
+ */
+interface LegacyExperimentConfig extends ExperimentConfig {
+  market: MarketConfig;
+}
+
+/**
  * 为每个信号策略选择代表性样本（最佳/中位/最差）
  *
  * 基于基准账户 PnL（仓位=1）进行排序选择
  */
 function selectRepresentativeSamples(
   allRunResults: MonteCarloRunResult[],
-  config: ExperimentConfig
+  config: LegacyExperimentConfig
 ): MonteCarloRunResult[] {
   const signalTypes = config.signals.map((s) => s.type);
 
@@ -174,7 +183,7 @@ function aggregateTakeProfitStats(
  */
 function aggregateResults(
   runResults: MonteCarloRunResult[],
-  config: ExperimentConfig
+  config: LegacyExperimentConfig
 ): AggregatedSignalResult[] {
   const numRuns = runResults.length;
   const signalTypes = config.signals.map((s) => s.type);
@@ -209,8 +218,9 @@ function aggregateResults(
 
 /**
  * 运行完整实验
+ * @deprecated 使用新的 Phase 0-4 管线代替
  */
-export async function runExperiment(config: ExperimentConfig): Promise<ExperimentResult> {
+export async function runExperiment(config: LegacyExperimentConfig): Promise<ExperimentResult> {
   const startTime = Date.now();
 
   // 收集所有 MC 运行的结果

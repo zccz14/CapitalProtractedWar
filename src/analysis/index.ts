@@ -11,7 +11,7 @@
  * - 核心关注：各 M_T 下止盈事件的平均时间间隔
  */
 
-import { VOLATILITY_SCENARIOS, type ExperimentResult } from '../types.js';
+import type { ExperimentResult } from '../types.js';
 
 // ============================================
 // 报告格式化
@@ -40,14 +40,12 @@ function formatNumber(value: number | null, decimals: number = 2): string {
 export function formatReport(result: ExperimentResult): FormattedReport {
   const { config } = result;
 
-  // 标题
-  const volatilityDesc =
-    VOLATILITY_SCENARIOS[config.market.volatility] ||
-    `σ=${(config.market.volatility * 100).toFixed(1)}%`;
+  // 标题 - 使用 description 或 name
+  const marketDesc = config.description ?? config.name;
   const signalNames = config.signals.map((s) => s.type).join(', ');
   const title = `实验: ${config.name}
-市场: ${config.market.type.toUpperCase()} | ${volatilityDesc}
-信号: ${signalNames} | K线数: ${config.market.candleCount} | MC次数: ${config.monteCarloRuns}`;
+市场: ${marketDesc}
+信号: ${signalNames} | K线数: ${config.candleCount} | MC次数: ${config.monteCarloRuns}`;
 
   // 摘要
   const summary = generateSummary(result);
@@ -79,51 +77,54 @@ function generateSummary(result: ExperimentResult): string {
     for (const target of keyTargets) {
       const stats = signalResult.takeProfitStats.get(target);
       if (stats) {
-        const avgInt = stats.intervalStats.mean;
-        const rounds = stats.avgRoundsPerRun;
         lines.push(
-          `  M_T=${target}: 平均间隔=${formatNumber(avgInt)}K线, 平均轮数=${rounds.toFixed(2)}`
+          `  M_T=${target}: 平均间隔=${formatNumber(stats.intervalStats.mean)} | 中位数=${formatNumber(stats.intervalStats.median)} | 频率=${(stats.avgFrequency * 1000).toFixed(4)}‰`
         );
       }
     }
   }
 
-  lines.push(`\n运行时间: ${result.elapsedMs}ms`);
+  return lines.join('\n');
+}
+
+/**
+ * 生成间隔矩阵
+ */
+function generateIntervalMatrix(result: ExperimentResult): string {
+  const lines: string[] = ['\n====== 止盈间隔矩阵 ======'];
+
+  // 收集所有 M_T 值
+  const allTargets = new Set<number>();
+  for (const signal of result.signalResults) {
+    for (const [target] of signal.takeProfitStats) {
+      allTargets.add(target);
+    }
+  }
+  const targets = Array.from(allTargets).sort((a, b) => a - b);
+
+  // 表头
+  const header = ['M_T', ...result.signalResults.map((s) => s.signalType)];
+  lines.push(header.join('\t'));
+
+  // 数据行
+  for (const target of targets) {
+    const row = [`${target}x`];
+    for (const signal of result.signalResults) {
+      const stats = signal.takeProfitStats.get(target);
+      if (stats && stats.intervalStats.mean !== null) {
+        row.push(formatNumber(stats.intervalStats.mean));
+      } else {
+        row.push('N/A');
+      }
+    }
+    lines.push(row.join('\t'));
+  }
 
   return lines.join('\n');
 }
 
 /**
- * 生成止盈间隔矩阵
- */
-function generateIntervalMatrix(result: ExperimentResult): string {
-  const targets = result.config.betting.takeProfitTargets;
-  const signals = result.signalResults;
-
-  // 表头
-  const header = ['M_T', ...signals.map((s) => s.signalType)];
-  const separator = header.map(() => '--------').join('+');
-
-  let output = '\n====== 平均止盈间隔 (K线数) ======\n';
-  output += `${header.map((h) => h.padStart(12)).join(' | ')}\n`;
-  output += `${separator}\n`;
-
-  // 数据行
-  for (const target of targets) {
-    const row = [target.toString()];
-    for (const signal of signals) {
-      const stats = signal.takeProfitStats.get(target);
-      const avg = stats?.intervalStats.mean ?? null;
-      row.push(formatNumber(avg, 0));
-    }
-    output += `${row.map((v) => v.padStart(12)).join(' | ')}\n`;
-  }
-
-  return output;
-}
-
-/**
- * 打印完整报告
+ * 打印格式化报告到控制台
  */
 export function printReport(result: ExperimentResult): void {
   const report = formatReport(result);
@@ -132,112 +133,45 @@ export function printReport(result: ExperimentResult): void {
   console.log('='.repeat(70));
   console.log(report.summary);
   console.log(report.intervalMatrix);
-
-  // 打印详细统计（可选）
-  printDetailedStats(result);
+  console.log(`${'='.repeat(70)}\n`);
 }
 
 /**
- * 打印详细统计
+ * 打印多个实验结果的对比报告
  */
-function printDetailedStats(result: ExperimentResult): void {
-  console.log('\n====== 详细统计 ======');
+export function printComparisonReport(results: ExperimentResult[]): void {
+  console.log(`\n${'='.repeat(70)}`);
+  console.log('实验对比报告');
+  console.log('='.repeat(70));
 
-  for (const signalResult of result.signalResults) {
-    console.log(`\n>>> ${signalResult.signalType} <<<`);
-    console.log(
-      'M_T'.padStart(8) +
-        '轮数'.padStart(10) +
-        '平均间隔'.padStart(12) +
-        '中位数'.padStart(10) +
-        '标准差'.padStart(10) +
-        'P25'.padStart(10) +
-        'P75'.padStart(10) +
-        '频率'.padStart(12)
-    );
-    console.log('-'.repeat(82));
-
-    for (const [target, stats] of signalResult.takeProfitStats) {
-      const { intervalStats } = stats;
-      console.log(
-        target.toString().padStart(8) +
-          stats.avgRoundsPerRun.toFixed(2).padStart(10) +
-          formatNumber(intervalStats.mean, 0).padStart(12) +
-          formatNumber(intervalStats.median, 0).padStart(10) +
-          formatNumber(intervalStats.std, 0).padStart(10) +
-          formatNumber(intervalStats.p25, 0).padStart(10) +
-          formatNumber(intervalStats.p75, 0).padStart(10) +
-          (stats.avgFrequency * 1000).toFixed(4).padStart(12)
-      );
+  // 收集所有 M_T 值
+  const allTargets = new Set<number>();
+  for (const result of results) {
+    for (const signal of result.signalResults) {
+      for (const [target] of signal.takeProfitStats) {
+        allTargets.add(target);
+      }
     }
   }
-}
+  const targets = Array.from(allTargets).sort((a, b) => a - b);
 
-// ============================================
-// 多实验比较
-// ============================================
-
-export interface ComparisonRow {
-  signalType: string;
-  targetMultiplier: number;
-  avgInterval: number | null;
-  medianInterval: number | null;
-  avgRoundsPerRun: number;
-  frequency: number;
-}
-
-/**
- * 提取比较数据
- */
-export function extractComparisonData(result: ExperimentResult): ComparisonRow[] {
-  const rows: ComparisonRow[] = [];
-
-  for (const signalResult of result.signalResults) {
-    for (const [target, stats] of signalResult.takeProfitStats) {
-      rows.push({
-        signalType: signalResult.signalType,
-        targetMultiplier: target,
-        avgInterval: stats.intervalStats.mean,
-        medianInterval: stats.intervalStats.median,
-        avgRoundsPerRun: stats.avgRoundsPerRun,
-        frequency: stats.avgFrequency,
-      });
+  // 对比表
+  for (const target of targets.slice(0, 5)) {
+    console.log(`\n--- M_T = ${target}x ---`);
+    for (const result of results) {
+      const desc = result.config.description ?? result.config.name;
+      for (const signal of result.signalResults) {
+        const stats = signal.takeProfitStats.get(target);
+        if (stats) {
+          console.log(
+            `  ${desc} | ${signal.signalType}: 平均间隔=${formatNumber(stats.intervalStats.mean)} | 频率=${(stats.avgFrequency * 1000).toFixed(4)}‰`
+          );
+        }
+      }
     }
   }
 
-  return rows;
-}
-
-/**
- * 打印比较表格
- */
-export function printComparisonTable(result: ExperimentResult): void {
-  const rows = extractComparisonData(result);
-
-  console.log(`\n${'='.repeat(100)}`);
-  console.log('信号策略 × 止盈线 对比表');
-  console.log('='.repeat(100));
-
-  console.log(
-    '策略'.padEnd(20) +
-      'M_T'.padStart(8) +
-      '平均间隔'.padStart(12) +
-      '中位间隔'.padStart(12) +
-      '平均轮数'.padStart(12) +
-      '频率(‰)'.padStart(12)
-  );
-  console.log('-'.repeat(100));
-
-  for (const row of rows) {
-    console.log(
-      row.signalType.slice(0, 18).padEnd(20) +
-        row.targetMultiplier.toString().padStart(8) +
-        formatNumber(row.avgInterval, 0).padStart(12) +
-        formatNumber(row.medianInterval, 0).padStart(12) +
-        row.avgRoundsPerRun.toFixed(2).padStart(12) +
-        (row.frequency * 1000).toFixed(4).padStart(12)
-    );
-  }
+  console.log(`\n${'='.repeat(70)}\n`);
 }
 
 // ============================================
@@ -269,7 +203,9 @@ export function exportToJSON(result: ExperimentResult): string {
     {
       config: {
         name: result.config.name,
-        market: result.config.market,
+        description: result.config.description,
+        metadata: result.config.metadata,
+        candleCount: result.config.candleCount,
         signals: result.config.signals,
         betting: result.config.betting,
         monteCarloRuns: result.config.monteCarloRuns,
@@ -288,33 +224,47 @@ export function exportToJSON(result: ExperimentResult): string {
  * 导出为CSV
  */
 export function exportToCSV(result: ExperimentResult): string {
-  const rows = extractComparisonData(result);
+  const lines: string[] = [];
 
-  const header = [
+  // 表头
+  const headers = [
     'signal_type',
     'target_multiplier',
     'avg_interval',
     'median_interval',
+    'std_interval',
+    'min_interval',
+    'max_interval',
     'avg_rounds_per_run',
-    'frequency',
-  ].join(',');
+    'avg_frequency',
+    'total_round_count',
+  ];
+  lines.push(headers.join(','));
 
-  const dataRows = rows.map((row) =>
-    [
-      `"${row.signalType}"`,
-      row.targetMultiplier,
-      row.avgInterval ?? '',
-      row.medianInterval ?? '',
-      row.avgRoundsPerRun.toFixed(4),
-      row.frequency.toFixed(8),
-    ].join(',')
-  );
+  // 数据行
+  for (const signal of result.signalResults) {
+    for (const [target, stats] of signal.takeProfitStats) {
+      const row = [
+        signal.signalType,
+        target,
+        stats.intervalStats.mean ?? '',
+        stats.intervalStats.median ?? '',
+        stats.intervalStats.std ?? '',
+        stats.intervalStats.min ?? '',
+        stats.intervalStats.max ?? '',
+        stats.avgRoundsPerRun,
+        stats.avgFrequency,
+        stats.totalRoundCount,
+      ];
+      lines.push(row.join(','));
+    }
+  }
 
-  return [header, ...dataRows].join('\n');
+  return lines.join('\n');
 }
 
 // ============================================
-// 统计工具函数
+// 统计工具
 // ============================================
 
 /**
@@ -322,7 +272,7 @@ export function exportToCSV(result: ExperimentResult): string {
  */
 export function calculateHistogram(
   values: number[],
-  bins: number = 50
+  bins: number = 20
 ): { binEdges: number[]; counts: number[] } {
   if (values.length === 0) {
     return { binEdges: [], counts: [] };

@@ -24,7 +24,7 @@ export function generateSampleDetailHTML(
   signalType: string,
   marketName: string,
   runIndex: number,
-  config: { volatility: number; drift?: number; candleCount: number },
+  config: { name: string; description?: string; candleCount: number },
   _baseDir: string = '',
   targetMT: number = 2
 ): string {
@@ -47,7 +47,11 @@ export function generateSampleDetailHTML(
 
   // 提取概览数据
   const overviewData = extractOverviewData(sampleData, targetMT);
-  const overviewHTML = generateOverviewHTML(overviewData, config, targetMT);
+  const overviewHTML = generateOverviewHTML(
+    overviewData,
+    { candleCount: config.candleCount },
+    targetMT
+  );
 
   // 图表
   const priceSignalChartSVG = generatePriceSignalChartSVG(
@@ -96,6 +100,8 @@ export function generateSampleDetailHTML(
 
   const totalTrades = trades?.length ?? 0;
 
+  const subtitle = config.description ?? config.name;
+
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -120,7 +126,7 @@ export function generateSampleDetailHTML(
     <h1>样本级别详细报告 (M_T=${targetMT})</h1>
     <p class="subtitle">
       ${signalType} | ${marketName} | Run #${runIndex + 1} | M_T=${targetMT} |
-      σ=${(config.volatility * 100).toFixed(1)}% | μ=${((config.drift ?? 0) * 100).toFixed(1)}%
+      ${subtitle}
     </p>
     
     ${overviewHTML}

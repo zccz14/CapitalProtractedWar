@@ -43,6 +43,17 @@ export function generateIndexHTML(suite: ReportSuiteForIndex): string {
     if (best.market) globalBest.set(target, best);
   }
 
+  // 收集所有 metadata keys（用于表头）
+  const metadataKeys = new Set<string>();
+  for (const result of results) {
+    if (result.config.metadata) {
+      for (const key of Object.keys(result.config.metadata)) {
+        metadataKeys.add(key);
+      }
+    }
+  }
+  const metadataKeysArray = Array.from(metadataKeys);
+
   // 市场条件列表
   const marketCards = results
     .map((result) => {
@@ -53,10 +64,12 @@ export function generateIndexHTML(suite: ReportSuiteForIndex): string {
         return currInt < bestInt ? curr : best;
       });
 
+      const subtitle = result.config.description ?? result.config.name;
+
       return `
       <a href="${filename}" class="link-card">
         <h4>${result.config.name}</h4>
-        <p>σ=${(result.config.market.volatility * 100).toFixed(1)}% | μ=${((result.config.market.drift ?? 0) * 100).toFixed(1)}%</p>
+        <p>${subtitle}</p>
         <p style="margin-top: 8px; font-size: 12px; opacity: 0.8;">
           最佳: ${bestSignal.signalType} (M_T=2 间隔 ${formatNumber(bestSignal.takeProfitStats.get(2)?.intervalStats.mean ?? null)})
         </p>
@@ -70,8 +83,7 @@ export function generateIndexHTML(suite: ReportSuiteForIndex): string {
     <thead>
       <tr>
         <th>市场条件</th>
-        <th>波动率</th>
-        <th>漂移率</th>
+        ${metadataKeysArray.map((k) => `<th>${k}</th>`).join('')}
         ${results[0]?.signalResults.map((s) => `<th>${s.signalType}<br/><small>M_T=2 间隔</small></th>`).join('') ?? ''}
       </tr>
     </thead>
@@ -81,8 +93,7 @@ export function generateIndexHTML(suite: ReportSuiteForIndex): string {
     const filename = `market_${sanitizeFilename(result.config.name)}.html`;
     matrixTable += `<tr>
       <td><a href="${filename}">${result.config.name}</a></td>
-      <td>${(result.config.market.volatility * 100).toFixed(1)}%</td>
-      <td>${((result.config.market.drift ?? 0) * 100).toFixed(1)}%</td>
+      ${metadataKeysArray.map((k) => `<td>${result.config.metadata?.[k] ?? '-'}</td>`).join('')}
       ${result.signalResults
         .map((s) => {
           const interval = s.takeProfitStats.get(2)?.intervalStats.mean;

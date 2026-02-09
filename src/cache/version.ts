@@ -8,4 +8,4 @@
  * - 修改输出格式时，递增次版本号
  * - 修复 bug 时，递增修订号
  */
-export const ENGINE_VERSION = '1.0.0';
+export const ENGINE_VERSION = '2.0.0';

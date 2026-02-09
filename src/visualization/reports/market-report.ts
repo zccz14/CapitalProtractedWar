@@ -61,6 +61,22 @@ export function generateMarketReportHTML(result: ExperimentResult, _baseDir: str
     if (best.signal) bestByTarget.set(target, best);
   }
 
+  // 从 metadata 生成 metric cards
+  const metadataCards = config.metadata
+    ? Object.entries(config.metadata)
+        .map(
+          ([label, value]) => `
+        <div class="metric-card">
+          <div class="value">${value}</div>
+          <div class="label">${label}</div>
+        </div>
+      `
+        )
+        .join('')
+    : '';
+
+  const subtitle = config.description ?? config.name;
+
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -78,21 +94,14 @@ export function generateMarketReportHTML(result: ExperimentResult, _baseDir: str
     </nav>
     
     <h1>市场条件报告</h1>
-    <p class="subtitle">${config.name} | ${config.market.type.toUpperCase()} | σ=${(config.market.volatility * 100).toFixed(1)}% | μ=${((config.market.drift ?? 0) * 100).toFixed(1)}%</p>
+    <p class="subtitle">${subtitle}</p>
     
     <div class="card">
       <h2>实验配置</h2>
       <div class="grid grid-4">
+        ${metadataCards}
         <div class="metric-card">
-          <div class="value">${config.market.type.toUpperCase()}</div>
-          <div class="label">市场类型</div>
-        </div>
-        <div class="metric-card">
-          <div class="value">${(config.market.volatility * 100).toFixed(1)}%</div>
-          <div class="label">波动率</div>
-        </div>
-        <div class="metric-card">
-          <div class="value">${config.market.candleCount}</div>
+          <div class="value">${config.candleCount}</div>
           <div class="label">K线数量</div>
         </div>
         <div class="metric-card">

@@ -73,7 +73,7 @@ export function generateSignalDetailHTML(
     </nav>
     
     <h1>${signalType} 策略详细报告</h1>
-    <p class="subtitle">${config.name} | σ=${(config.market.volatility * 100).toFixed(1)}% | μ=${((config.market.drift ?? 0) * 100).toFixed(1)}%</p>
+    <p class="subtitle">${config.name} | ${config.description ?? config.name}</p>
     
     <div class="card">
       <h2>策略表现概览</h2>
