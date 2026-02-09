@@ -1,9 +1,14 @@
 {
-  "volatilities": [0.05, 0.2],
-  "drifts": [0, 0.1],
-  "candleCount": 5000,
-  "monteCarloRuns": 50,
-  "baseSeed": 42,
+  "markets": [
+    {
+      "generator": "gbm",
+      "volatilities": [0.05, 0.2],
+      "drifts": [0, 0.1],
+      "candleCount": 5000,
+      "monteCarloRuns": 50,
+      "baseSeed": 42
+    }
+  ],
   "signals": [
     { "type": "trend_following", "params": { "fastPeriod": 5, "slowPeriod": 20 } },
     { "type": "mean_reversion", "params": { "period": 20, "threshold": 2 } },

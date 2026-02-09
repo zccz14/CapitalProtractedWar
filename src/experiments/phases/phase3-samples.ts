@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { runOnce } from '../../engine/index.js';
 import {
+  generateMarketGroupId,
   generateSignalId,
   generateBettingId,
   getAggregatedResultPath,
@@ -44,71 +45,78 @@ export async function runPhase3(options: Phase3Options): Promise<Phase3Result> {
 
   console.log('Phase 3: 生成代表性样本详细数据');
 
-  for (const volatility of config.volatilities) {
-    for (const drift of config.drifts) {
-      const marketGroupId = `gbm_vol${(volatility * 100).toFixed(0)}_drift${(drift * 100).toFixed(0)}_n${config.candleCount}`;
+  for (const template of config.markets) {
+    for (const volatility of template.volatilities) {
+      for (const drift of template.drifts) {
+        const marketGroupId = generateMarketGroupId({
+          type: template.generator,
+          volatility,
+          drift,
+          candleCount: template.candleCount,
+        });
 
-      for (const signalConfig of config.signals) {
-        const signalId = generateSignalId(signalConfig);
-        const bettingId = generateBettingId(config.betting);
+        for (const signalConfig of config.signals) {
+          const signalId = generateSignalId(signalConfig);
+          const bettingId = generateBettingId(config.betting);
 
-        // 读取聚合结果获取样本索引
-        const aggPath = getAggregatedResultPath(outputDir, marketGroupId, signalId, bettingId);
+          // 读取聚合结果获取样本索引
+          const aggPath = getAggregatedResultPath(outputDir, marketGroupId, signalId, bettingId);
 
-        if (!fs.existsSync(aggPath)) {
-          console.warn(`  警告: 聚合结果不存在: ${aggPath}`);
-          continue;
-        }
-
-        const aggFile = readAggregatedResult(aggPath);
-        const { sampleIndices } = aggFile.result;
-
-        for (const sampleType of ['best', 'median', 'worst'] as const) {
-          const samplePath = getSamplePath(
-            outputDir,
-            marketGroupId,
-            signalId,
-            bettingId,
-            sampleType
-          );
-
-          totalSamples++;
-
-          // 检查缓存
-          if (!force && fs.existsSync(samplePath)) {
-            cachedSamples++;
-            if (verbose) {
-              console.log(`  缓存命中: ${marketGroupId}/${signalId}/${sampleType}`);
-            }
+          if (!fs.existsSync(aggPath)) {
+            console.warn(`  警告: 聚合结果不存在: ${aggPath}`);
             continue;
           }
 
-          const { marketId } = sampleIndices[sampleType];
+          const aggFile = readAggregatedResult(aggPath);
+          const { sampleIndices } = aggFile.result;
 
-          // 从 marketId 解析出配置
-          const marketConfig = parseMarketId(marketId);
+          for (const sampleType of ['best', 'median', 'worst'] as const) {
+            const samplePath = getSamplePath(
+              outputDir,
+              marketGroupId,
+              signalId,
+              bettingId,
+              sampleType
+            );
 
-          // 重新运行，记录完整曲线数据
-          const { sampleData } = runOnce(marketConfig, signalConfig, config.betting, true);
+            totalSamples++;
 
-          if (sampleData) {
-            // 将 Map 转换为普通对象以便 JSON 序列化
-            const jsonData = convertSampleDataToJSON(sampleData);
+            // 检查缓存
+            if (!force && fs.existsSync(samplePath)) {
+              cachedSamples++;
+              if (verbose) {
+                console.log(`  缓存命中: ${marketGroupId}/${signalId}/${sampleType}`);
+              }
+              continue;
+            }
 
-            ensureDir(path.dirname(samplePath));
-            fs.writeFileSync(samplePath, JSON.stringify(jsonData), 'utf-8');
+            const { marketId } = sampleIndices[sampleType];
 
-            newSamples++;
+            // 从 marketId 解析出配置
+            const marketConfig = parseMarketId(marketId);
 
-            if (verbose) {
-              console.log(`  完成: ${marketGroupId}/${signalId}/${sampleType}`);
+            // 重新运行，记录完整曲线数据
+            const { sampleData } = runOnce(marketConfig, signalConfig, config.betting, true);
+
+            if (sampleData) {
+              // 将 Map 转换为普通对象以便 JSON 序列化
+              const jsonData = convertSampleDataToJSON(sampleData);
+
+              ensureDir(path.dirname(samplePath));
+              fs.writeFileSync(samplePath, JSON.stringify(jsonData), 'utf-8');
+
+              newSamples++;
+
+              if (verbose) {
+                console.log(`  完成: ${marketGroupId}/${signalId}/${sampleType}`);
+              }
             }
           }
         }
-      }
 
-      if (!verbose) {
-        console.log(`  市场组 ${marketGroupId}: 样本生成完成`);
+        if (!verbose) {
+          console.log(`  市场组 ${marketGroupId}: 样本生成完成`);
+        }
       }
     }
   }

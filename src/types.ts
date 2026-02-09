@@ -612,21 +612,37 @@ export const VOLATILITY_SCENARIOS: Record<number, string> = {
 // ============================================
 
 /**
- * Sand Table 配置文件接口
+ * 市场生成模板
  *
- * 用于定义实验集合的配置，从 sandt.config.json 加载
+ * 每个模板描述一类市场的生成规则：
+ * - generator 指定市场生成算法
+ * - volatilities × drifts 笛卡尔积展开为多个 market group
+ * - 每个 market group 通过 monteCarloRuns 生成若干市场序列（亲戚关系，非同一市场）
  */
-export interface ISandTableConfig {
-  /** 波动率列表 */
+export interface MarketTemplate {
+  /** 市场生成算法 */
+  generator: MarketType;
+  /** 波动率列表（年化） */
   volatilities: number[];
-  /** 漂移率列表 */
+  /** 漂移率列表（年化） */
   drifts: number[];
   /** K 线数量 */
   candleCount: number;
-  /** 蒙特卡洛运行次数 */
+  /** 蒙特卡洛运行次数（同一特征参数生成的市场序列数） */
   monteCarloRuns: number;
   /** 基础种子 */
   baseSeed: number;
+}
+
+/**
+ * Sand Table 配置文件接口
+ *
+ * 三足鼎立：markets × signals × betting
+ * 从 sandt.config.json 加载
+ */
+export interface ISandTableConfig {
+  /** 市场生成模板列表 */
+  markets: MarketTemplate[];
   /** 信号策略列表 */
   signals: SignalStrategyConfig[];
   /** 投注策略配置 */

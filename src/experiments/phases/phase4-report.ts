@@ -8,6 +8,7 @@
 import * as fs from 'fs';
 import { exec } from 'child_process';
 import {
+  generateMarketGroupId,
   generateSignalId,
   generateBettingId,
   getAggregatedResultPath,
@@ -51,89 +52,96 @@ export async function runPhase4(options: Phase4Options): Promise<Phase4Result> {
   const lightResults: LightExperimentResult[] = [];
   const bettingId = generateBettingId(config.betting);
 
-  for (const volatility of config.volatilities) {
-    for (const drift of config.drifts) {
-      const marketGroupId = `gbm_vol${(volatility * 100).toFixed(0)}_drift${(drift * 100).toFixed(0)}_n${config.candleCount}`;
+  for (const template of config.markets) {
+    for (const volatility of template.volatilities) {
+      for (const drift of template.drifts) {
+        const marketGroupId = generateMarketGroupId({
+          type: template.generator,
+          volatility,
+          drift,
+          candleCount: template.candleCount,
+        });
 
-      // 只收集聚合结果，不读取样本数据
-      const signalResults: AggregatedSignalResult[] = [];
-      // 收集各信号策略的样本索引
-      const sampleIndicesMap = new Map<
-        string,
-        {
-          best: { marketId: string; baselinePnL: number };
-          median: { marketId: string; baselinePnL: number };
-          worst: { marketId: string; baselinePnL: number };
-        }
-      >();
-
-      for (const signalConfig of config.signals) {
-        const signalId = generateSignalId(signalConfig);
-        const aggPath = getAggregatedResultPath(outputDir, marketGroupId, signalId, bettingId);
-
-        if (!fs.existsSync(aggPath)) {
-          if (verbose) {
-            console.warn(`  警告: 聚合结果不存在: ${aggPath}`);
+        // 只收集聚合结果，不读取样本数据
+        const signalResults: AggregatedSignalResult[] = [];
+        // 收集各信号策略的样本索引
+        const sampleIndicesMap = new Map<
+          string,
+          {
+            best: { marketId: string; baselinePnL: number };
+            median: { marketId: string; baselinePnL: number };
+            worst: { marketId: string; baselinePnL: number };
           }
+        >();
+
+        for (const signalConfig of config.signals) {
+          const signalId = generateSignalId(signalConfig);
+          const aggPath = getAggregatedResultPath(outputDir, marketGroupId, signalId, bettingId);
+
+          if (!fs.existsSync(aggPath)) {
+            if (verbose) {
+              console.warn(`  警告: 聚合结果不存在: ${aggPath}`);
+            }
+            continue;
+          }
+
+          const aggFile = readAggregatedResult(aggPath);
+          const aggResult = aggFile.result;
+
+          // 转换为 AggregatedSignalResult 格式
+          const takeProfitStats = new Map<number, AggregatedTakeProfitStats>();
+          for (const stat of aggResult.takeProfitStats) {
+            takeProfitStats.set(stat.targetMultiplier, {
+              targetMultiplier: stat.targetMultiplier,
+              totalRoundCount: stat.totalRoundCount,
+              avgRoundsPerRun: stat.avgRoundsPerRun,
+              intervalStats: stat.intervalStats,
+              avgFrequency: stat.avgFrequency,
+            });
+          }
+
+          signalResults.push({
+            signalType: signalConfig.type,
+            takeProfitStats,
+            avgWinRate: aggResult.avgWinRate,
+            avgTradeCount: aggResult.avgTradeCount,
+          });
+
+          // 收集样本索引（包含 baselinePnL）
+          if (aggResult.sampleIndices) {
+            sampleIndicesMap.set(signalConfig.type, aggResult.sampleIndices);
+          }
+        }
+
+        if (signalResults.length === 0) {
           continue;
         }
 
-        const aggFile = readAggregatedResult(aggPath);
-        const aggResult = aggFile.result;
-
-        // 转换为 AggregatedSignalResult 格式
-        const takeProfitStats = new Map<number, AggregatedTakeProfitStats>();
-        for (const stat of aggResult.takeProfitStats) {
-          takeProfitStats.set(stat.targetMultiplier, {
-            targetMultiplier: stat.targetMultiplier,
-            totalRoundCount: stat.totalRoundCount,
-            avgRoundsPerRun: stat.avgRoundsPerRun,
-            intervalStats: stat.intervalStats,
-            avgFrequency: stat.avgFrequency,
-          });
-        }
-
-        signalResults.push({
-          signalType: signalConfig.type,
-          takeProfitStats,
-          avgWinRate: aggResult.avgWinRate,
-          avgTradeCount: aggResult.avgTradeCount,
+        // 构建轻量级结果
+        lightResults.push({
+          config: {
+            name: `vol${(volatility * 100).toFixed(0)}_drift${(drift * 100).toFixed(0)}`,
+            description: `波动率${(volatility * 100).toFixed(0)}%, 漂移率${(drift * 100).toFixed(0)}%`,
+            market: {
+              type: template.generator,
+              volatility,
+              drift,
+              candleCount: template.candleCount,
+              seed: template.baseSeed,
+            },
+            signals: config.signals,
+            betting: config.betting,
+            monteCarloRuns: template.monteCarloRuns,
+          },
+          signalResults,
+          monteCarloRuns: template.monteCarloRuns,
+          candlesPerRun: template.candleCount,
+          sampleIndicesMap,
         });
 
-        // 收集样本索引（包含 baselinePnL）
-        if (aggResult.sampleIndices) {
-          sampleIndicesMap.set(signalConfig.type, aggResult.sampleIndices);
+        if (verbose) {
+          console.log(`  收集: ${marketGroupId} (${signalResults.length} 个信号策略)`);
         }
-      }
-
-      if (signalResults.length === 0) {
-        continue;
-      }
-
-      // 构建轻量级结果
-      lightResults.push({
-        config: {
-          name: `vol${(volatility * 100).toFixed(0)}_drift${(drift * 100).toFixed(0)}`,
-          description: `波动率${(volatility * 100).toFixed(0)}%, 漂移率${(drift * 100).toFixed(0)}%`,
-          market: {
-            type: 'gbm',
-            volatility,
-            drift,
-            candleCount: config.candleCount,
-            seed: config.baseSeed,
-          },
-          signals: config.signals,
-          betting: config.betting,
-          monteCarloRuns: config.monteCarloRuns,
-        },
-        signalResults,
-        monteCarloRuns: config.monteCarloRuns,
-        candlesPerRun: config.candleCount,
-        sampleIndicesMap,
-      });
-
-      if (verbose) {
-        console.log(`  收集: ${marketGroupId} (${signalResults.length} 个信号策略)`);
       }
     }
   }

@@ -29,17 +29,8 @@ function loadConfig(configPath: string): { config?: ISandTableConfig; error?: st
     return { error: `配置文件解析失败: ${configPath}\n请检查 JSON 格式是否正确。` };
   }
 
-  // 基本验证
-  const requiredFields = [
-    'volatilities',
-    'drifts',
-    'candleCount',
-    'monteCarloRuns',
-    'baseSeed',
-    'signals',
-    'betting',
-    'outputDir',
-  ] as const;
+  // 基本验证：三足鼎立 markets / signals / betting + outputDir
+  const requiredFields = ['markets', 'signals', 'betting', 'outputDir'] as const;
 
   for (const field of requiredFields) {
     if (config[field] === undefined) {
@@ -47,12 +38,33 @@ function loadConfig(configPath: string): { config?: ISandTableConfig; error?: st
     }
   }
 
-  if (!Array.isArray(config.volatilities) || config.volatilities.length === 0) {
-    return { error: 'volatilities 必须是非空数组' };
+  if (!Array.isArray(config.markets) || config.markets.length === 0) {
+    return { error: 'markets 必须是非空数组' };
   }
 
-  if (!Array.isArray(config.drifts) || config.drifts.length === 0) {
-    return { error: 'drifts 必须是非空数组' };
+  // 验证每个市场模板
+  for (let i = 0; i < config.markets.length; i++) {
+    const m = config.markets[i];
+    const prefix = `markets[${i}]`;
+
+    if (!m.generator) {
+      return { error: `${prefix}.generator 是必需字段` };
+    }
+    if (!Array.isArray(m.volatilities) || m.volatilities.length === 0) {
+      return { error: `${prefix}.volatilities 必须是非空数组` };
+    }
+    if (!Array.isArray(m.drifts) || m.drifts.length === 0) {
+      return { error: `${prefix}.drifts 必须是非空数组` };
+    }
+    if (!m.candleCount || m.candleCount <= 0) {
+      return { error: `${prefix}.candleCount 必须是正整数` };
+    }
+    if (!m.monteCarloRuns || m.monteCarloRuns <= 0) {
+      return { error: `${prefix}.monteCarloRuns 必须是正整数` };
+    }
+    if (m.baseSeed === undefined) {
+      return { error: `${prefix}.baseSeed 是必需字段` };
+    }
   }
 
   if (!Array.isArray(config.signals) || config.signals.length === 0) {
@@ -74,11 +86,7 @@ function toFullExperimentConfig(
   resolvedOutputDir: string
 ): FullExperimentConfig {
   return {
-    volatilities: config.volatilities,
-    drifts: config.drifts,
-    candleCount: config.candleCount,
-    monteCarloRuns: config.monteCarloRuns,
-    baseSeed: config.baseSeed,
+    markets: config.markets,
     signals: config.signals,
     betting: config.betting,
     outputDir: resolvedOutputDir,

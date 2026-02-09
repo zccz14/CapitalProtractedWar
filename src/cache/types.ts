@@ -4,6 +4,7 @@
 
 import type {
   MarketConfig,
+  MarketTemplate,
   SignalStrategyConfig,
   BettingStrategyConfig,
   SignalStrategyType,
@@ -165,18 +166,12 @@ export interface ExperimentOptions {
 
 /**
  * 实验配置（完整）
+ *
+ * 三足鼎立：markets × signals × betting
  */
 export interface FullExperimentConfig {
-  /** 波动率列表 */
-  volatilities: number[];
-  /** 漂移率列表 */
-  drifts: number[];
-  /** K 线数量 */
-  candleCount: number;
-  /** 蒙特卡洛运行次数 */
-  monteCarloRuns: number;
-  /** 基础种子 */
-  baseSeed: number;
+  /** 市场生成模板列表 */
+  markets: MarketTemplate[];
   /** 信号策略列表 */
   signals: SignalStrategyConfig[];
   /** 投注策略配置 */

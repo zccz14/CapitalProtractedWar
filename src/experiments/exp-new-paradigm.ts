@@ -36,11 +36,18 @@ export async function runExperiment(
   console.log('╚══════════════════════════════════════════════════════════════════╝');
 
   // 打印配置
-  console.log(`\nK线数: ${config.candleCount} | MC次数: ${config.monteCarloRuns}`);
-  console.log(
-    `波动率场景: ${config.volatilities.map((v) => `${(v * 100).toFixed(0)}%`).join(', ')}`
-  );
-  console.log(`漂移率场景: ${config.drifts.map((d) => `${(d * 100).toFixed(0)}%`).join(', ')}`);
+  console.log(`\n市场模板: ${config.markets.length} 个`);
+  for (const [i, template] of config.markets.entries()) {
+    console.log(
+      `  [${i}] ${template.generator} | K线数: ${template.candleCount} | MC次数: ${template.monteCarloRuns}`
+    );
+    console.log(
+      `      波动率: ${template.volatilities.map((v) => `${(v * 100).toFixed(0)}%`).join(', ')}`
+    );
+    console.log(
+      `      漂移率: ${template.drifts.map((d) => `${(d * 100).toFixed(0)}%`).join(', ')}`
+    );
+  }
   console.log(`信号策略: ${config.signals.map((s) => s.type).join(', ')}`);
   console.log(`止盈线: ${config.betting.takeProfitTargets.join(', ')}`);
   console.log(`输出目录: ${outputDir}`);

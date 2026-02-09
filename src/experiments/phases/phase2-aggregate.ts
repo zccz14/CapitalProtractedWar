@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   generateMarketId,
+  generateMarketGroupId,
   generateSignalId,
   generateBettingId,
   getRunResultPath,
@@ -42,7 +43,7 @@ export interface Phase2Result {
  */
 export async function runPhase2(options: Phase2Options): Promise<Phase2Result> {
   const { config, force, verbose } = options;
-  const { outputDir, baseSeed, monteCarloRuns } = config;
+  const { outputDir } = config;
 
   let totalAggregations = 0;
   let cachedAggregations = 0;
@@ -50,68 +51,75 @@ export async function runPhase2(options: Phase2Options): Promise<Phase2Result> {
 
   console.log('Phase 2: 聚合结果');
 
-  for (const volatility of config.volatilities) {
-    for (const drift of config.drifts) {
-      const marketGroupId = `gbm_vol${(volatility * 100).toFixed(0)}_drift${(drift * 100).toFixed(0)}_n${config.candleCount}`;
+  for (const template of config.markets) {
+    for (const volatility of template.volatilities) {
+      for (const drift of template.drifts) {
+        const marketGroupId = generateMarketGroupId({
+          type: template.generator,
+          volatility,
+          drift,
+          candleCount: template.candleCount,
+        });
 
-      for (const signalConfig of config.signals) {
-        const signalId = generateSignalId(signalConfig);
-        const bettingId = generateBettingId(config.betting);
+        for (const signalConfig of config.signals) {
+          const signalId = generateSignalId(signalConfig);
+          const bettingId = generateBettingId(config.betting);
 
-        const aggPath = getAggregatedResultPath(outputDir, marketGroupId, signalId, bettingId);
-        const runsDir = path.join(outputDir, 'runs');
+          const aggPath = getAggregatedResultPath(outputDir, marketGroupId, signalId, bettingId);
+          const runsDir = path.join(outputDir, 'runs');
 
-        totalAggregations++;
+          totalAggregations++;
 
-        // 检查聚合缓存
-        if (isAggregationCacheValid(aggPath, runsDir, force)) {
-          cachedAggregations++;
+          // 检查聚合缓存
+          if (isAggregationCacheValid(aggPath, runsDir, force)) {
+            cachedAggregations++;
+            if (verbose) {
+              console.log(`  缓存命中: ${marketGroupId}/${signalId}`);
+            }
+            continue;
+          }
+
+          // 读取所有相关的 run 文件
+          const runs: { marketId: string; stats: RunStats }[] = [];
+
+          for (let seedOffset = 0; seedOffset < template.monteCarloRuns; seedOffset++) {
+            const marketConfig: MarketConfig = {
+              type: template.generator,
+              volatility,
+              drift,
+              candleCount: template.candleCount,
+              seed: template.baseSeed + seedOffset,
+            };
+            const marketId = generateMarketId(marketConfig);
+            const runPath = getRunResultPath(outputDir, marketId, signalId, bettingId);
+
+            if (fs.existsSync(runPath)) {
+              const runFile = readRunResult(runPath);
+              runs.push({ marketId, stats: runFile.result });
+            }
+          }
+
+          if (runs.length === 0) {
+            console.warn(`  警告: ${marketGroupId}/${signalId} 没有找到运行结果`);
+            continue;
+          }
+
+          // 聚合
+          const aggregated = aggregateRuns(runs, marketGroupId, signalId, bettingId);
+
+          // 写入
+          writeAggregatedResult(aggPath, aggregated);
+
+          newAggregations++;
+
           if (verbose) {
-            console.log(`  缓存命中: ${marketGroupId}/${signalId}`);
-          }
-          continue;
-        }
-
-        // 读取所有相关的 run 文件
-        const runs: { marketId: string; stats: RunStats }[] = [];
-
-        for (let seedOffset = 0; seedOffset < monteCarloRuns; seedOffset++) {
-          const marketConfig: MarketConfig = {
-            type: 'gbm',
-            volatility,
-            drift,
-            candleCount: config.candleCount,
-            seed: baseSeed + seedOffset,
-          };
-          const marketId = generateMarketId(marketConfig);
-          const runPath = getRunResultPath(outputDir, marketId, signalId, bettingId);
-
-          if (fs.existsSync(runPath)) {
-            const runFile = readRunResult(runPath);
-            runs.push({ marketId, stats: runFile.result });
+            console.log(`  完成: ${marketGroupId}/${signalId} (${runs.length} 次运行)`);
           }
         }
 
-        if (runs.length === 0) {
-          console.warn(`  警告: ${marketGroupId}/${signalId} 没有找到运行结果`);
-          continue;
+        if (!verbose) {
+          console.log(`  市场组 ${marketGroupId}: 聚合完成`);
         }
-
-        // 聚合
-        const aggregated = aggregateRuns(runs, marketGroupId, signalId, bettingId);
-
-        // 写入
-        writeAggregatedResult(aggPath, aggregated);
-
-        newAggregations++;
-
-        if (verbose) {
-          console.log(`  完成: ${marketGroupId}/${signalId} (${runs.length} 次运行)`);
-        }
-      }
-
-      if (!verbose) {
-        console.log(`  市场组 ${marketGroupId}: 聚合完成`);
       }
     }
   }
