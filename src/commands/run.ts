@@ -42,28 +42,40 @@ function loadConfig(configPath: string): { config?: ISandTableConfig; error?: st
     return { error: 'markets 必须是非空数组' };
   }
 
-  // 验证每个市场模板
+  // 验证每个市场配置条目
   for (let i = 0; i < config.markets.length; i++) {
     const m = config.markets[i];
     const prefix = `markets[${i}]`;
 
-    if (!m.generator) {
-      return { error: `${prefix}.generator 是必需字段` };
+    if (!m.type) {
+      return { error: `${prefix}.type 是必需字段` };
     }
-    if (!Array.isArray(m.volatilities) || m.volatilities.length === 0) {
-      return { error: `${prefix}.volatilities 必须是非空数组` };
-    }
-    if (!Array.isArray(m.drifts) || m.drifts.length === 0) {
-      return { error: `${prefix}.drifts 必须是非空数组` };
-    }
-    if (!m.candleCount || m.candleCount <= 0) {
-      return { error: `${prefix}.candleCount 必须是正整数` };
-    }
-    if (!m.monteCarloRuns || m.monteCarloRuns <= 0) {
-      return { error: `${prefix}.monteCarloRuns 必须是正整数` };
-    }
-    if (m.baseSeed === undefined) {
-      return { error: `${prefix}.baseSeed 是必需字段` };
+
+    if (m.type === 'csv') {
+      // CSV 文件引用校验
+      if (!m.file || typeof m.file !== 'string') {
+        return { error: `${prefix}.file 是必需字段（CSV 文件路径）` };
+      }
+      if (!m.name || typeof m.name !== 'string') {
+        return { error: `${prefix}.name 是必需字段（市场名称）` };
+      }
+    } else {
+      // 生成器模板校验
+      if (!Array.isArray(m.volatilities) || m.volatilities.length === 0) {
+        return { error: `${prefix}.volatilities 必须是非空数组` };
+      }
+      if (!Array.isArray(m.drifts) || m.drifts.length === 0) {
+        return { error: `${prefix}.drifts 必须是非空数组` };
+      }
+      if (!m.candleCount || m.candleCount <= 0) {
+        return { error: `${prefix}.candleCount 必须是正整数` };
+      }
+      if (!m.monteCarloRuns || m.monteCarloRuns <= 0) {
+        return { error: `${prefix}.monteCarloRuns 必须是正整数` };
+      }
+      if (m.baseSeed === undefined) {
+        return { error: `${prefix}.baseSeed 是必需字段` };
+      }
     }
   }
 
@@ -164,6 +176,7 @@ export class RunCommand extends Command {
       outputDir: resolvedOutputDir,
       noOpen: this.noOpen,
       verbose: this.verbose,
+      configDir,
     };
 
     // 运行实验

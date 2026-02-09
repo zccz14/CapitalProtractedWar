@@ -28,7 +28,7 @@ export async function runExperiment(
   config: FullExperimentConfig,
   options: ExperimentOptions
 ): Promise<string> {
-  const { force, phases, outputDir, noOpen, verbose } = options;
+  const { force, phases, outputDir, noOpen, verbose, configDir } = options;
 
   // 打印实验信息
   console.log('╔══════════════════════════════════════════════════════════════════╗');
@@ -36,17 +36,21 @@ export async function runExperiment(
   console.log('╚══════════════════════════════════════════════════════════════════╝');
 
   // 打印配置
-  console.log(`\n市场模板: ${config.markets.length} 个`);
-  for (const [i, template] of config.markets.entries()) {
-    console.log(
-      `  [${i}] ${template.generator} | K线数: ${template.candleCount} | MC次数: ${template.monteCarloRuns}`
-    );
-    console.log(
-      `      波动率: ${template.volatilities.map((v) => `${(v * 100).toFixed(0)}%`).join(', ')}`
-    );
-    console.log(
-      `      漂移率: ${template.drifts.map((d) => `${(d * 100).toFixed(0)}%`).join(', ')}`
-    );
+  console.log(`\n市场配置: ${config.markets.length} 个`);
+  for (const [i, entry] of config.markets.entries()) {
+    if (entry.type === 'csv') {
+      console.log(`  [${i}] CSV | 文件: ${entry.file} | 名称: ${entry.name}`);
+    } else {
+      console.log(
+        `  [${i}] ${entry.type} | K线数: ${entry.candleCount} | MC次数: ${entry.monteCarloRuns}`
+      );
+      console.log(
+        `      波动率: ${entry.volatilities.map((v) => `${(v * 100).toFixed(0)}%`).join(', ')}`
+      );
+      console.log(
+        `      漂移率: ${entry.drifts.map((d) => `${(d * 100).toFixed(0)}%`).join(', ')}`
+      );
+    }
   }
   console.log(`信号策略: ${config.signals.map((s) => s.type).join(', ')}`);
   console.log(`止盈线: ${config.betting.takeProfitTargets.join(', ')}`);
@@ -63,7 +67,7 @@ export async function runExperiment(
   // Phase 0: 生成市场序列
   if (phases.includes(0)) {
     console.log('═'.repeat(70));
-    await runPhase0({ config, force, verbose });
+    await runPhase0({ config, force, verbose, configDir });
     console.log('');
   }
 

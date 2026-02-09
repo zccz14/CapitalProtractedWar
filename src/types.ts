@@ -624,7 +624,7 @@ export const VOLATILITY_SCENARIOS: Record<number, string> = {
  */
 export interface MarketTemplate {
   /** 市场生成算法 */
-  generator: MarketType;
+  type: MarketType;
   /** 波动率列表（年化） */
   volatilities: number[];
   /** 漂移率列表（年化） */
@@ -638,14 +638,37 @@ export interface MarketTemplate {
 }
 
 /**
+ * CSV 市场数据源
+ *
+ * 直接引用外部 CSV 文件作为市场序列，不经过生成器。
+ * CSV 格式须符合 time,open,high,low,close 标准格式。
+ */
+export interface CSVMarketSource {
+  type: 'csv';
+  /** CSV 文件路径（相对于配置文件所在目录） */
+  file: string;
+  /** 市场名称（用于显示和 ID 生成） */
+  name: string;
+  /** 人类可读描述（可选） */
+  description?: string;
+}
+
+/**
+ * 市场配置条目（联合类型）
+ *
+ * 可以是生成器模板（GBM/GARCH/...）或外部 CSV 文件引用
+ */
+export type MarketEntry = MarketTemplate | CSVMarketSource;
+
+/**
  * Sand Table 配置文件接口
  *
  * 三足鼎立：markets × signals × betting
  * 从 sandt.config.json 加载
  */
 export interface ISandTableConfig {
-  /** 市场生成模板列表 */
-  markets: MarketTemplate[];
+  /** 市场配置列表（生成器模板或 CSV 文件引用） */
+  markets: MarketEntry[];
   /** 信号策略列表 */
   signals: SignalStrategyConfig[];
   /** 投注策略配置 */

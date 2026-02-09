@@ -3,7 +3,7 @@
  */
 
 import type {
-  MarketTemplate,
+  MarketEntry,
   SignalStrategyConfig,
   BettingStrategyConfig,
   SignalStrategyType,
@@ -161,6 +161,8 @@ export interface ExperimentOptions {
   noOpen: boolean;
   /** 详细输出 */
   verbose: boolean;
+  /** 配置文件所在目录（用于解析 CSV 相对路径） */
+  configDir?: string;
 }
 
 /**
@@ -169,8 +171,8 @@ export interface ExperimentOptions {
  * 三足鼎立：markets × signals × betting
  */
 export interface FullExperimentConfig {
-  /** 市场生成模板列表 */
-  markets: MarketTemplate[];
+  /** 市场配置列表（生成器模板或 CSV 文件引用） */
+  markets: MarketEntry[];
   /** 信号策略列表 */
   signals: SignalStrategyConfig[];
   /** 投注策略配置 */

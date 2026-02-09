@@ -35,6 +35,24 @@ export function generateMarketGroupId(config: MarketConfig): string {
 }
 
 /**
+ * 生成 CSV 市场序列 ID
+ *
+ * 基于名称 + 文件内容哈希，确保同一文件内容产生稳定 ID
+ */
+export function generateCSVMarketId(name: string, filePath: string): string {
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const hash = crypto.createHash('sha256').update(content).digest('hex').slice(0, 8);
+  return `csv_${name}_h${hash}`;
+}
+
+/**
+ * 生成 CSV 市场组 ID
+ */
+export function generateCSVMarketGroupId(name: string): string {
+  return `csv_${name}`;
+}
+
+/**
  * 从市场 ID 解析出配置
  */
 export function parseMarketId(marketId: string): MarketConfig {
