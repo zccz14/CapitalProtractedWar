@@ -63,6 +63,9 @@ export function readCandlesCSV(filePath: string): Candle[] {
     });
   }
 
+  // 按时间升序排序，确保乱序 CSV 数据也能正确处理
+  candles.sort((a, b) => a.time - b.time);
+
   return candles;
 }
 
