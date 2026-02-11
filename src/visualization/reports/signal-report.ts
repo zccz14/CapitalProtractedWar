@@ -108,7 +108,7 @@ export function generateSignalDetailHTML(
     
     <div class="card">
       <h2>止盈间隔分布</h2>
-      <p style="color: #666; margin-bottom: 20px;">基于 ${result.sampleRuns?.length ?? 0} 次样本运行的分布数据</p>
+      <p style="color: #666; margin-bottom: 20px;">${result.monteCarloRuns === 1 ? '基于单次运行的分布数据' : `基于 ${result.monteCarloRuns} 次蒙特卡洛运行的分布数据`}</p>
       <div class="grid grid-2">
         ${distributionCharts.map((chart) => `<div class="chart-container">${chart}</div>`).join('')}
       </div>

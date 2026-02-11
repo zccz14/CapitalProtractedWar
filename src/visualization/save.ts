@@ -80,19 +80,28 @@ function buildFullResult(
 ): ExperimentResult {
   const sampleRuns: ExperimentResult['sampleRuns'] = [];
 
+  // 非蒙特卡洛场景（monteCarloRuns === 1）时，best/median/worst 完全相同，只加载一个
+  const isSingleRun = lightResult.monteCarloRuns === 1;
+  const sampleTypesToLoad = isSingleRun
+    ? (['best'] as const)
+    : (['best', 'median', 'worst'] as const);
+
   // 为每个信号策略加载样本数据
   for (const signalResult of lightResult.signalResults) {
     const signalId = signalResult.signalType;
     // 获取该信号策略的样本索引（包含 baselinePnL）
     const sampleIndices = lightResult.sampleIndicesMap?.get(signalId);
 
-    for (const sampleType of ['best', 'median', 'worst'] as const) {
+    for (const sampleType of sampleTypesToLoad) {
       const sampleData = loadSampleData(marketGroupId, signalId, bettingId, sampleType);
       if (!sampleData) continue;
 
+      // 单次运行时标记为 'only'，否则保留原始 sampleType
+      const effectiveSampleType = isSingleRun ? 'only' : sampleType;
+
       // 查找或创建对应的运行结果
       let runResult = sampleRuns.find(
-        (r) => r.sampleMetadata?.get(signalId)?.sampleType === sampleType
+        (r) => r.sampleMetadata?.get(signalId)?.sampleType === effectiveSampleType
       );
 
       if (!runResult) {
@@ -115,7 +124,7 @@ function buildFullResult(
         runResult.sampleMetadata.set(signalId, {
           runIndex: runResult.runIndex,
           baselinePnL,
-          sampleType,
+          sampleType: effectiveSampleType,
         });
       }
     }

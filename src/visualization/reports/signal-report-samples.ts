@@ -30,13 +30,17 @@ export function generateSampleLinksHTML(
   const takeProfitTargets = result.config.betting.takeProfitTargets;
   const totalRuns = result.monteCarloRuns;
 
-  // 按样本类型排序：best -> median -> worst
-  const typeOrder: Record<string, number> = { best: 0, median: 1, worst: 2 };
+  // 按样本类型排序：best -> median -> worst, only 排在最前
+  const typeOrder: Record<string, number> = { only: 0, best: 0, median: 1, worst: 2 };
   const sortedRuns = [...runsWithData].sort((a, b) => {
     const typeA = a.sampleMetadata?.get(signalType)?.sampleType ?? 'median';
     const typeB = b.sampleMetadata?.get(signalType)?.sampleType ?? 'median';
     return typeOrder[typeA] - typeOrder[typeB];
   });
+
+  // 检测是否为单次运行（非蒙特卡洛）
+  const isSingleRun =
+    sortedRuns.length === 1 && sortedRuns[0].sampleMetadata?.get(signalType)?.sampleType === 'only';
 
   // 为每个样本运行生成一个卡片
   const runCards = sortedRuns
@@ -46,9 +50,22 @@ export function generateSampleLinksHTML(
       const sampleType = meta?.sampleType ?? 'median';
       const baselinePnL = meta?.baselinePnL ?? 0;
 
-      const typeLabel = sampleType === 'best' ? '最佳' : sampleType === 'worst' ? '最差' : '中位';
+      const typeLabel =
+        sampleType === 'only'
+          ? '唯一样本'
+          : sampleType === 'best'
+            ? '最佳'
+            : sampleType === 'worst'
+              ? '最差'
+              : '中位';
       const typeColor =
-        sampleType === 'best' ? '#27ae60' : sampleType === 'worst' ? '#e74c3c' : '#3498db';
+        sampleType === 'only'
+          ? '#8e44ad'
+          : sampleType === 'best'
+            ? '#27ae60'
+            : sampleType === 'worst'
+              ? '#e74c3c'
+              : '#3498db';
       const pnlStr = (baselinePnL * 100).toFixed(2);
       const pnlColor = baselinePnL >= 0 ? '#27ae60' : '#e74c3c';
 
@@ -63,7 +80,7 @@ export function generateSampleLinksHTML(
       <div class="sample-run-card" style="border-left: 4px solid ${typeColor};">
         <h4>
           <span class="sample-type-badge" style="background: ${typeColor};">${typeLabel}</span>
-          Run #${originalRunIndex + 1} | 基准PnL: <span style="color: ${pnlColor};">${pnlStr}%</span>
+          ${sampleType === 'only' ? '' : `Run #${originalRunIndex + 1} | `}基准PnL: <span style="color: ${pnlColor};">${pnlStr}%</span>
         </h4>
         <div class="mt-links-grid">
           ${mtLinks}
@@ -77,8 +94,12 @@ export function generateSampleLinksHTML(
     <div class="card">
       <h2>样本详情报告</h2>
       <p style="color: #666; margin-bottom: 15px;">
-        从 <strong>${totalRuns}</strong> 次蒙特卡洛运行中选择 <strong>3</strong> 个代表性样本（基于基准账户 PnL 排序）。
-        每个 M_T 值有独立的报告文件。
+        ${
+          isSingleRun
+            ? '单次运行的样本数据。每个 M_T 值有独立的报告文件。'
+            : `从 <strong>${totalRuns}</strong> 次蒙特卡洛运行中选择 <strong>3</strong> 个代表性样本（基于基准账户 PnL 排序）。
+        每个 M_T 值有独立的报告文件。`
+        }
       </p>
       <style>
         .sample-run-card {

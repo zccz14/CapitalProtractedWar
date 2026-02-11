@@ -488,8 +488,8 @@ export interface SampleMetadata {
   runIndex: number;
   /** 基准账户最终 PnL */
   baselinePnL: number;
-  /** 样本类型：最佳/中位/最差 */
-  sampleType: 'best' | 'median' | 'worst';
+  /** 样本类型：最佳/中位/最差/唯一（非蒙特卡洛场景） */
+  sampleType: 'best' | 'median' | 'worst' | 'only';
 }
 
 /**

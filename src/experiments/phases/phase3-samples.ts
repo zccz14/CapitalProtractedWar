@@ -72,40 +72,60 @@ export async function runPhase3(options: Phase3Options): Promise<Phase3Result> {
       const aggFile = readAggregatedResult(aggPath);
       const { sampleIndices } = aggFile.result;
 
-      for (const sampleType of ['best', 'median', 'worst'] as const) {
-        const samplePath = getSamplePath(outputDir, marketGroupId, signalId, bettingId, sampleType);
+      const sampleTypes = ['best', 'median', 'worst'] as const;
 
+      // 1. 检查缓存，收集需要生成的 sampleType
+      const typesNeedingGeneration: (typeof sampleTypes)[number][] = [];
+      for (const sampleType of sampleTypes) {
+        const samplePath = getSamplePath(outputDir, marketGroupId, signalId, bettingId, sampleType);
         totalSamples++;
 
-        // 检查缓存
         if (!force && fs.existsSync(samplePath)) {
           cachedSamples++;
           if (verbose) {
             console.log(`  缓存命中: ${marketGroupId}/${signalId}/${sampleType}`);
           }
-          continue;
+        } else {
+          typesNeedingGeneration.push(sampleType);
         }
+      }
 
-        const { marketId: seriesId } = sampleIndices[sampleType];
+      // 2. 按 marketId 分组，相同 marketId 只 runOnce 一次
+      const marketIdToTypes = new Map<string, (typeof sampleTypes)[number][]>();
+      for (const sampleType of typesNeedingGeneration) {
+        const { marketId } = sampleIndices[sampleType];
+        const arr = marketIdToTypes.get(marketId) ?? [];
+        arr.push(sampleType);
+        marketIdToTypes.set(marketId, arr);
+      }
 
+      for (const [seriesId, types] of marketIdToTypes) {
         // 从 CSV 读取 candles
         const csvPath = getMarketCSVPath(outputDir, seriesId);
         const candles = readCandlesCSV(csvPath);
 
-        // 重新运行，记录完整曲线数据
+        // 重新运行，记录完整曲线数据（每个 unique marketId 只运行一次）
         const { sampleData } = runOnce(candles, signalConfig, config.betting, true);
 
         if (sampleData) {
-          // 将 Map 转换为普通对象以便 JSON 序列化
-          const jsonData = convertSampleDataToJSON(sampleData);
+          const jsonStr = JSON.stringify(convertSampleDataToJSON(sampleData));
 
-          ensureDir(path.dirname(samplePath));
-          fs.writeFileSync(samplePath, JSON.stringify(jsonData), 'utf-8');
+          for (const sampleType of types) {
+            const samplePath = getSamplePath(
+              outputDir,
+              marketGroupId,
+              signalId,
+              bettingId,
+              sampleType
+            );
+            ensureDir(path.dirname(samplePath));
+            fs.writeFileSync(samplePath, jsonStr, 'utf-8');
 
-          newSamples++;
+            newSamples++;
 
-          if (verbose) {
-            console.log(`  完成: ${marketGroupId}/${signalId}/${sampleType}`);
+            if (verbose) {
+              console.log(`  完成: ${marketGroupId}/${signalId}/${sampleType}`);
+            }
           }
         }
       }
