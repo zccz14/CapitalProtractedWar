@@ -97,12 +97,15 @@ export type SignalStrategyType =
   | 'breakout_4' // 4根K线突破策略
   | 'random' // 随机策略 (对照组)
   | 'adaptive_volatility' // 自适应波动率策略
-  | 'boll_reversion'; // 布林带回归策略
+  | 'boll_reversion' // 布林带回归策略
+  | 'precomputed'; // 预计算信号（从 CSV 加载）
 
 export interface SignalStrategyConfig {
   type: SignalStrategyType;
   /** 策略特定参数 */
   params?: Record<string, number | string | boolean>;
+  /** 限制该信号只在指定市场上运行（市场名称列表，如 ["ETH-5m"]）。省略则在所有市场上运行。 */
+  markets?: string[];
 }
 
 export interface SignalStrategy {

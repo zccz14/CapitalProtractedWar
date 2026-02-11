@@ -27,6 +27,7 @@ import {
   type SampleDataLoader,
 } from '../../visualization/index.js';
 import { readManifest } from '../../market/manifest.js';
+import { isSignalApplicableToGroup } from './index.js';
 
 export interface Phase4Options {
   config: FullExperimentConfig;
@@ -71,6 +72,9 @@ export async function runPhase4(options: Phase4Options): Promise<Phase4Result> {
     >();
 
     for (const signalConfig of config.signals) {
+      // 检查信号是否适用于当前市场组
+      if (!isSignalApplicableToGroup(signalConfig, group)) continue;
+
       const signalId = generateSignalId(signalConfig);
       const aggPath = getAggregatedResultPath(outputDir, marketGroupId, signalId, bettingId);
 

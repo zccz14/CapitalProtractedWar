@@ -17,6 +17,7 @@ import {
 import type { FullExperimentConfig } from '../../cache/types.js';
 import { readManifest } from '../../market/manifest.js';
 import { readCandlesCSV, getMarketCSVPath } from '../../market/csv.js';
+import { isSignalApplicableToGroup } from './index.js';
 
 export interface Phase1Options {
   config: FullExperimentConfig;
@@ -45,7 +46,9 @@ export async function runPhase1(options: Phase1Options): Promise<Phase1Result> {
   const manifest = readManifest(outputDir);
 
   const totalCombinations = manifest.groups.reduce(
-    (sum, g) => sum + g.seriesIds.length * config.signals.length,
+    (sum, g) =>
+      sum +
+      g.seriesIds.length * config.signals.filter((s) => isSignalApplicableToGroup(s, g)).length,
     0
   );
   let processed = 0;
@@ -58,6 +61,9 @@ export async function runPhase1(options: Phase1Options): Promise<Phase1Result> {
       let candles: import('../../types.js').Candle[] | null = null;
 
       for (const signalConfig of config.signals) {
+        // 检查信号是否适用于当前市场组
+        if (!isSignalApplicableToGroup(signalConfig, group)) continue;
+
         const signalId = generateSignalId(signalConfig);
         const bettingId = generateBettingId(config.betting);
 

@@ -24,6 +24,7 @@ import type {
   SampleIndex,
 } from '../../cache/types.js';
 import { readManifest } from '../../market/manifest.js';
+import { isSignalApplicableToGroup } from './index.js';
 
 export interface Phase2Options {
   config: FullExperimentConfig;
@@ -57,6 +58,9 @@ export async function runPhase2(options: Phase2Options): Promise<Phase2Result> {
     const marketGroupId = group.groupId;
 
     for (const signalConfig of config.signals) {
+      // 检查信号是否适用于当前市场组
+      if (!isSignalApplicableToGroup(signalConfig, group)) continue;
+
       const signalId = generateSignalId(signalConfig);
       const bettingId = generateBettingId(config.betting);
 
