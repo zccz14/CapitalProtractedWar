@@ -24,6 +24,64 @@ function getSignalParams(
       return { lookbackPeriod: 20, breakoutThreshold: 0.01 };
     case 'breakout_4':
       return { lookbackCount: 4 };
+    case 'regression_trend':
+      return { lookbackPeriod: 20, minSlopeRatio: 0.0003 };
+    case 'regression_trend_rsi':
+      return {
+        lookbackPeriod: 20,
+        minSlopeRatio: 0.00025,
+        rsiPeriod: 14,
+        rsiBullThreshold: 55,
+        rsiBearThreshold: 45,
+      };
+    case 'regression_trend_rsi_atr':
+      return {
+        lookbackPeriod: 24,
+        minSlopeRatio: 0.00022,
+        rsiPeriod: 14,
+        rsiBullThreshold: 56,
+        rsiBearThreshold: 44,
+        atrPeriod: 14,
+        minAtrRatio: 0.0025,
+      };
+    case 'boll_breakout':
+      return { period: 20, stdDev: 2, breakoutThreshold: 0 };
+    case 'boll_breakout_trend':
+      return { period: 20, stdDev: 2, breakoutThreshold: 0, trendLookback: 10, minSlope: 0 };
+    case 'boll_breakout_squeeze':
+      return { period: 20, stdDev: 2, breakoutThreshold: 0, squeezeThreshold: 0.04 };
+    case 'boll_breakout_confirm':
+      return { period: 20, stdDev: 2, breakoutThreshold: 0, confirmBars: 2 };
+    case 'boll_breakout_pullback':
+      return {
+        period: 20,
+        stdDev: 2,
+        breakoutThreshold: 0,
+        maxWaitBars: 10,
+        closeThresholdRatio: 0.5,
+      };
+    case 'boll_breakout_pullback_trend':
+      return {
+        period: 20,
+        stdDev: 2,
+        breakoutThreshold: 0,
+        maxWaitBars: 10,
+        closeThresholdRatio: 0.5,
+        trendLookback: 10,
+        minSlope: 0,
+      };
+    case 'boll_breakout_pullback_atr':
+      return {
+        period: 20,
+        stdDev: 2,
+        breakoutThreshold: 0,
+        maxWaitBars: 10,
+        closeThresholdRatio: 0.5,
+        atrPeriod: 14,
+        minAtrRatio: 0.003,
+        trendFast: 20,
+        trendSlow: 50,
+      };
     case 'random':
     default:
       return {
@@ -55,7 +113,8 @@ export class RunCommand extends Command {
   });
 
   signal = Option.String('-s,--signal', 'random', {
-    description: '信号策略 (trend_following|mean_reversion|breakout|breakout_4|random)',
+    description:
+      '信号策略 (trend_following|mean_reversion|breakout|breakout_4|boll_breakout|boll_breakout_trend|boll_breakout_squeeze|boll_breakout_confirm|boll_breakout_pullback|boll_breakout_pullback_trend|boll_breakout_pullback_atr|random)',
   });
 
   candles = Option.String('-c,--candles', '2000', {

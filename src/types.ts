@@ -95,9 +95,36 @@ export type SignalStrategyType =
   | 'mean_reversion' // 均值回归
   | 'breakout' // 突破策略
   | 'breakout_4' // 4根K线突破策略
+  | 'regression_trend' // 线性回归趋势
+  | 'regression_trend_obv' // 回归趋势 + OBV
+  | 'regression_trend_rsi' // 回归趋势 + RSI
+  | 'regression_trend_mfi' // 回归趋势 + MFI
+  | 'regression_trend_rsi_mfi' // 回归趋势 + RSI + MFI
+  | 'regression_trend_rsi_mfi_gate' // 回归趋势 + RSI + MFI 门控
+  | 'regression_trend_rsi_macd' // 回归趋势 + RSI + MACD
+  | 'regression_trend_rsi_obv' // 回归趋势 + RSI + OBV
+  | 'regression_trend_rsi_obv_adx' // 回归趋势 + RSI + OBV + ADX门控
+  | 'regression_trend_rsi_obv_atr' // 回归趋势 + RSI + OBV + ATR门控
+  | 'regression_trend_rsi_obv_atr_macd' // 回归趋势 + RSI + OBV + ATR + MACD门控
+  | 'regression_trend_rsi_atr' // 回归趋势 + RSI + ATR门控
+  | 'regression_trend_rsi_atr_macd' // 回归趋势 + RSI + ATR + MACD门控
+  | 'regression_trend_rsi_atr_macd_adx' // 回归趋势 + RSI + ATR + MACD + ADX门控
+  | 'regression_trend_rsi_atr_macd_adx_cci' // 回归趋势 + RSI + ATR + MACD + ADX + CCI门控
+  | 'regression_trend_rsi_atr_macd_adx_cci_kdj' // 回归趋势 + RSI + ATR + MACD + ADX + CCI + KDJ门控
+  | 'regression_trend_rsi_atr_macd_adx_cci_kdj_obv' // 回归趋势 + RSI + ATR + MACD + ADX + CCI + KDJ + OBV门控
+  | 'regression_trend_rsi_atr_macd_adx_cci_kdj_obv_roc' // 回归趋势 + RSI + ATR + MACD + ADX + CCI + KDJ + OBV + ROC门控
+  | 'regression_trend_rsi_atr_macd_adx_cci_kdj_obv_roc_williamsr' // 回归趋势 + RSI + ATR + MACD + ADX + CCI + KDJ + OBV + ROC + WilliamsR门控
+  | 'regression_trend_rsi_atr_macd_adx_cci_kdj_obv_roc_williamsr_aroon' // 回归趋势 + RSI + ATR + MACD + ADX + CCI + KDJ + OBV + ROC + WilliamsR + Aroon门控
   | 'random' // 随机策略 (对照组)
   | 'adaptive_volatility' // 自适应波动率策略
-  | 'boll_reversion'; // 布林带回归策略
+  | 'boll_reversion' // 布林带回归策略
+  | 'boll_breakout' // 布林带突破策略
+  | 'boll_breakout_trend' // 布林带突破(趋势过滤)
+  | 'boll_breakout_squeeze' // 布林带突破(挤压过滤)
+  | 'boll_breakout_confirm' // 布林带突破(确认)
+  | 'boll_breakout_pullback' // 布林带突破(回踩入场)
+  | 'boll_breakout_pullback_trend' // 布林带突破(回踩+趋势门控)
+  | 'boll_breakout_pullback_atr'; // 布林带突破(回踩+ATR过滤)
 
 export interface SignalStrategyConfig {
   type: SignalStrategyType;

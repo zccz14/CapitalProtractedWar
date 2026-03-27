@@ -10,8 +10,9 @@
  * 1. trend_following - 趋势跟踪 (均线交叉)
  * 2. mean_reversion - 均值回归
  * 3. breakout - 突破策略
- * 4. random - 随机策略 (对照组)
- * 5. adaptive_volatility - 自适应波动率策略
+ * 4. boll_breakout - 布林带突破策略
+ * 5. random - 随机策略 (对照组)
+ * 6. adaptive_volatility - 自适应波动率策略
  */
 
 // 导出基类和注册机制

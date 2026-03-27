@@ -254,6 +254,123 @@ export function rsi(candles: Candle[], endIndex: number, period: number = 14): n
 }
 
 /**
+ * 计算 MACD 指标
+ * @param candles K线数据
+ * @param endIndex 结束索引（包含）
+ * @param fastPeriod 快速 EMA 周期 (默认12)
+ * @param slowPeriod 慢速 EMA 周期 (默认26)
+ * @param signalPeriod 信号线 EMA 周期 (默认9)
+ */
+export function macd(
+  candles: Candle[],
+  endIndex: number,
+  fastPeriod: number = 12,
+  slowPeriod: number = 26,
+  signalPeriod: number = 9
+): { macd: number; signal: number; histogram: number } {
+  if (endIndex < slowPeriod - 1) {
+    return { macd: NaN, signal: NaN, histogram: NaN };
+  }
+
+  const macdSeries: number[] = [];
+  const start = slowPeriod - 1;
+  for (let i = start; i <= endIndex; i++) {
+    const fast = ema(candles, i, fastPeriod);
+    const slow = ema(candles, i, slowPeriod);
+    macdSeries.push(fast - slow);
+  }
+
+  // 计算信号线 EMA
+  if (macdSeries.length < signalPeriod) {
+    const macdValue = macdSeries[macdSeries.length - 1];
+    return { macd: macdValue, signal: NaN, histogram: NaN };
+  }
+
+  const multiplier = 2 / (signalPeriod + 1);
+  let signalValue = macdSeries.slice(0, signalPeriod).reduce((a, b) => a + b, 0) / signalPeriod;
+
+  for (let i = signalPeriod; i < macdSeries.length; i++) {
+    signalValue = (macdSeries[i] - signalValue) * multiplier + signalValue;
+  }
+
+  const macdValue = macdSeries[macdSeries.length - 1];
+  return {
+    macd: macdValue,
+    signal: signalValue,
+    histogram: macdValue - signalValue,
+  };
+}
+
+/**
+ * 计算平均方向指数 (ADX)
+ * @param candles K线数据
+ * @param endIndex 结束索引（包含）
+ * @param period 周期 (默认14)
+ */
+export function adx(candles: Candle[], endIndex: number, period: number = 14): number {
+  if (endIndex < period * 2) return NaN;
+
+  const trList: number[] = [];
+  const plusDmList: number[] = [];
+  const minusDmList: number[] = [];
+
+  for (let i = 1; i <= endIndex; i++) {
+    const current = candles[i];
+    const prev = candles[i - 1];
+
+    const upMove = current.high - prev.high;
+    const downMove = prev.low - current.low;
+
+    const plusDm = upMove > downMove && upMove > 0 ? upMove : 0;
+    const minusDm = downMove > upMove && downMove > 0 ? downMove : 0;
+
+    trList.push(trueRange(candles, i));
+    plusDmList.push(plusDm);
+    minusDmList.push(minusDm);
+  }
+
+  let atrValue = 0;
+  let plusDmSmoothed = 0;
+  let minusDmSmoothed = 0;
+
+  for (let i = 0; i < period; i++) {
+    atrValue += trList[i];
+    plusDmSmoothed += plusDmList[i];
+    minusDmSmoothed += minusDmList[i];
+  }
+  atrValue /= period;
+  plusDmSmoothed /= period;
+  minusDmSmoothed /= period;
+
+  const dxList: number[] = [];
+
+  for (let i = period; i < trList.length; i++) {
+    if (i > period) {
+      atrValue = (atrValue * (period - 1) + trList[i]) / period;
+      plusDmSmoothed = (plusDmSmoothed * (period - 1) + plusDmList[i]) / period;
+      minusDmSmoothed = (minusDmSmoothed * (period - 1) + minusDmList[i]) / period;
+    }
+
+    const plusDi = atrValue === 0 ? 0 : (100 * plusDmSmoothed) / atrValue;
+    const minusDi = atrValue === 0 ? 0 : (100 * minusDmSmoothed) / atrValue;
+
+    const denom = plusDi + minusDi;
+    const dx = denom === 0 ? 0 : (100 * Math.abs(plusDi - minusDi)) / denom;
+    dxList.push(dx);
+  }
+
+  if (dxList.length < period) return NaN;
+
+  let adxValue = dxList.slice(0, period).reduce((a, b) => a + b, 0) / period;
+
+  for (let i = period; i < dxList.length; i++) {
+    adxValue = (adxValue * (period - 1) + dxList[i]) / period;
+  }
+
+  return adxValue;
+}
+
+/**
  * 计算价格变化率
  * @param candles K线数据
  * @param endIndex 结束索引（包含）
@@ -266,6 +383,279 @@ export function roc(candles: Candle[], endIndex: number, period: number): number
   const pastPrice = candles[endIndex - period].close;
 
   return (currentPrice - pastPrice) / pastPrice;
+}
+
+/**
+ * 计算商品通道指数 (CCI)
+ * @param candles K线数据
+ * @param endIndex 结束索引（包含）
+ * @param period 周期 (默认20)
+ */
+export function cci(candles: Candle[], endIndex: number, period: number = 20): number {
+  if (endIndex < period - 1) return NaN;
+
+  const start = endIndex - period + 1;
+  const typicalPrices: number[] = [];
+
+  for (let i = start; i <= endIndex; i++) {
+    const candle = candles[i];
+    typicalPrices.push((candle.high + candle.low + candle.close) / 3);
+  }
+
+  const mean = typicalPrices.reduce((a, b) => a + b, 0) / typicalPrices.length;
+  const meanDeviation =
+    typicalPrices.reduce((sum, tp) => sum + Math.abs(tp - mean), 0) / typicalPrices.length;
+
+  if (meanDeviation === 0) return 0;
+
+  const currentTypicalPrice = typicalPrices[typicalPrices.length - 1];
+  return (currentTypicalPrice - mean) / (0.015 * meanDeviation);
+}
+
+/**
+ * 计算随机指标 (KDJ)
+ * @param candles K线数据
+ * @param endIndex 结束索引（包含）
+ * @param period RSV 周期 (默认9)
+ * @param kPeriod K 线平滑周期 (默认3)
+ * @param dPeriod D 线平滑周期 (默认3)
+ * @returns { k: K值, d: D值, j: J值 }
+ */
+export function kdj(
+  candles: Candle[],
+  endIndex: number,
+  period: number = 9,
+  kPeriod: number = 3,
+  dPeriod: number = 3
+): { k: number; d: number; j: number } {
+  if (endIndex < period - 1) return { k: NaN, d: NaN, j: NaN };
+
+  const rsvList: number[] = [];
+
+  // 计算 RSV (Raw Stochastic Value)
+  for (let i = period - 1; i <= endIndex; i++) {
+    const start = i - period + 1;
+    let highestHigh = -Infinity;
+    let lowestLow = Infinity;
+
+    for (let j = start; j <= i; j++) {
+      highestHigh = Math.max(highestHigh, candles[j].high);
+      lowestLow = Math.min(lowestLow, candles[j].low);
+    }
+
+    const currentClose = candles[i].close;
+    if (highestHigh === lowestLow) {
+      rsvList.push(50); // 避免除以零
+    } else {
+      rsvList.push(((currentClose - lowestLow) / (highestHigh - lowestLow)) * 100);
+    }
+  }
+
+  if (rsvList.length === 0) return { k: NaN, d: NaN, j: NaN };
+
+  // 计算 K 值 (RSV 的平滑移动平均)
+  let kValue = rsvList[0];
+  for (let i = 1; i < rsvList.length; i++) {
+    kValue = (2 / (kPeriod + 1)) * rsvList[i] + (1 - 2 / (kPeriod + 1)) * kValue;
+  }
+
+  // 计算 D 值 (K 值的平滑移动平均)
+  let dValue = kValue;
+  const kHistory: number[] = [kValue];
+  for (let i = 1; i < rsvList.length; i++) {
+    kValue = (2 / (kPeriod + 1)) * rsvList[i] + (1 - 2 / (kPeriod + 1)) * kValue;
+    kHistory.push(kValue);
+  }
+
+  // 重新计算 D 值
+  dValue = kHistory.slice(0, dPeriod).reduce((a, b) => a + b, 0) / dPeriod;
+  for (let i = dPeriod; i < kHistory.length; i++) {
+    dValue = (2 / (dPeriod + 1)) * kHistory[i] + (1 - 2 / (dPeriod + 1)) * dValue;
+  }
+
+  const currentK = kValue;
+  const currentD = dValue;
+  const currentJ = 3 * currentK - 2 * currentD;
+
+  return { k: currentK, d: currentD, j: currentJ };
+}
+
+/**
+ * 计算成交量代理 (volume 为空时使用价格波动作为代理)
+ */
+export function volumeProxy(candle: Candle): number {
+  if (
+    candle.volume !== null &&
+    candle.volume !== undefined &&
+    Number.isFinite(candle.volume) &&
+    candle.volume > 0
+  ) {
+    return candle.volume;
+  }
+
+  const range = candle.high - candle.low;
+  if (range > 0) return range;
+
+  const body = Math.abs(candle.close - candle.open);
+  if (body > 0) return body;
+
+  return 1;
+}
+
+/**
+ * 计算资金流量指数 (MFI)
+ * @param candles K线数据
+ * @param endIndex 结束索引（包含）
+ * @param period 周期 (默认14)
+ */
+export function mfi(candles: Candle[], endIndex: number, period: number = 14): number {
+  if (endIndex < period) return NaN;
+
+  let positiveFlow = 0;
+  let negativeFlow = 0;
+
+  for (let i = endIndex - period + 1; i <= endIndex; i++) {
+    const current = candles[i];
+    const prev = candles[i - 1];
+    const typicalPrice = (current.high + current.low + current.close) / 3;
+    const prevTypicalPrice = (prev.high + prev.low + prev.close) / 3;
+    const moneyFlow = typicalPrice * volumeProxy(current);
+
+    if (typicalPrice > prevTypicalPrice) {
+      positiveFlow += moneyFlow;
+    } else if (typicalPrice < prevTypicalPrice) {
+      negativeFlow += moneyFlow;
+    }
+  }
+
+  if (negativeFlow === 0) return 100;
+  if (positiveFlow === 0) return 0;
+
+  const ratio = positiveFlow / negativeFlow;
+  return 100 - 100 / (1 + ratio);
+}
+
+/**
+ * 计算 OBV (On-Balance Volume)
+ * 以 volume 为空时的代理成交量作为替代
+ */
+export function obv(candles: Candle[], endIndex: number): number {
+  if (endIndex <= 0) return 0;
+
+  let obvValue = 0;
+  for (let i = 1; i <= endIndex; i++) {
+    const current = candles[i];
+    const previous = candles[i - 1];
+    const volume = volumeProxy(current);
+
+    if (current.close > previous.close) {
+      obvValue += volume;
+    } else if (current.close < previous.close) {
+      obvValue -= volume;
+    }
+  }
+
+  return obvValue;
+}
+
+/**
+ * 计算线性回归斜率 (每根K线的价格变化趋势)
+ * @param candles K线数据
+ * @param endIndex 结束索引（包含）
+ * @param period 周期
+ * @param priceKey 价格字段 (默认 'close')
+ */
+export function linearRegressionSlope(
+  candles: Candle[],
+  endIndex: number,
+  period: number,
+  priceKey: 'open' | 'high' | 'low' | 'close' = 'close'
+): number {
+  if (endIndex < period - 1) return NaN;
+
+  const start = endIndex - period + 1;
+  const n = period;
+  let sumX = 0;
+  let sumY = 0;
+  let sumXY = 0;
+  let sumXX = 0;
+
+  for (let i = 0; i < n; i++) {
+    const x = i;
+    const y = candles[start + i][priceKey];
+    sumX += x;
+    sumY += y;
+    sumXY += x * y;
+    sumXX += x * x;
+  }
+
+  const numerator = n * sumXY - sumX * sumY;
+  const denominator = n * sumXX - sumX * sumX;
+
+  if (denominator === 0) return 0;
+  return numerator / denominator;
+}
+
+/**
+ * 计算 Williams %R (威廉指标)
+ * @param candles K线数据
+ * @param endIndex 结束索引（包含）
+ * @param period 周期 (默认14)
+ */
+export function williamsR(candles: Candle[], endIndex: number, period: number = 14): number {
+  if (endIndex < period) return NaN;
+
+  let highestHigh = -Infinity;
+  let lowestLow = Infinity;
+
+  for (let i = endIndex - period + 1; i <= endIndex; i++) {
+    highestHigh = Math.max(highestHigh, candles[i].high);
+    lowestLow = Math.min(lowestLow, candles[i].low);
+  }
+
+  const currentClose = candles[endIndex].close;
+  if (highestHigh === lowestLow) return -50;
+
+  return ((highestHigh - currentClose) / (highestHigh - lowestLow)) * -100;
+}
+
+/**
+ * 计算 Aroon 指标 (阿隆指标)
+ * @param candles K线数据
+ * @param endIndex 结束索引（包含）
+ * @param period 周期 (默认25)
+ * @returns { aroonUp: Aroon Up 线, aroonDown: Aroon Down 线 }
+ */
+export function aroon(
+  candles: Candle[],
+  endIndex: number,
+  period: number = 25
+): { aroonUp: number; aroonDown: number } {
+  if (endIndex < period) return { aroonUp: NaN, aroonDown: NaN };
+
+  let highestHighIndex = -1;
+  let lowestLowIndex = -1;
+  let highestHigh = -Infinity;
+  let lowestLow = Infinity;
+
+  for (let i = endIndex - period + 1; i <= endIndex; i++) {
+    if (candles[i].high > highestHigh) {
+      highestHigh = candles[i].high;
+      highestHighIndex = i;
+    }
+    if (candles[i].low < lowestLow) {
+      lowestLow = candles[i].low;
+      lowestLowIndex = i;
+    }
+  }
+
+  const periodsSinceHigh = endIndex - highestHighIndex;
+  const periodsSinceLow = endIndex - lowestLowIndex;
+
+  const aroonUp = ((period - periodsSinceHigh) / period) * 100;
+  const aroonDown = ((period - periodsSinceLow) / period) * 100;
+
+  return { aroonUp, aroonDown };
 }
 
 // ============================================

@@ -26,14 +26,57 @@ import { runPhase1, runPhase2, runPhase3, runPhase4 } from './phases/index.js';
 // 实验配置
 // ============================================
 
-// 测试的信号策略
+// 测试的信号策略（循序渐进：基线 → 单指标 → 双指标 → 门控/参数微调）
 const SIGNAL_STRATEGIES: SignalStrategyConfig[] = [
-  { type: 'trend_following', params: { fastPeriod: 5, slowPeriod: 20 } },
-  { type: 'mean_reversion', params: { period: 20, threshold: 2 } },
-  { type: 'breakout', params: { period: 20, threshold: 0 } },
-  { type: 'boll_reversion', params: { period: 20, stdDev: 2 } },
-  { type: 'breakout_4', params: { lookbackCount: 4 } },
+  // 对照组（基准噪声）
   { type: 'random', params: { tradeProbability: 0.1, avgHoldingPeriod: 10, seed: 42 } },
+
+  // 基线：线性回归趋势
+  { type: 'regression_trend', params: { lookbackPeriod: 20, minSlopeRatio: 0.00028 } },
+
+  // 单指标：MFI 资金流确认
+  {
+    type: 'regression_trend_mfi',
+    params: {
+      lookbackPeriod: 20,
+      minSlopeRatio: 0.00025,
+      mfiPeriod: 14,
+      mfiBullThreshold: 60,
+      mfiBearThreshold: 40,
+    },
+  },
+
+  // 双指标：RSI + MFI 动量一致性
+  {
+    type: 'regression_trend_rsi_mfi',
+    params: {
+      lookbackPeriod: 20,
+      minSlopeRatio: 0.00024,
+      rsiPeriod: 14,
+      rsiBullThreshold: 54,
+      rsiBearThreshold: 46,
+      mfiPeriod: 14,
+      mfiBullThreshold: 58,
+      mfiBearThreshold: 42,
+    },
+  },
+
+  // 门控/参数微调：RSI + MFI + MFI斜率门控
+  {
+    type: 'regression_trend_rsi_mfi_gate',
+    params: {
+      lookbackPeriod: 20,
+      minSlopeRatio: 0.00023,
+      rsiPeriod: 14,
+      rsiBullThreshold: 55,
+      rsiBearThreshold: 45,
+      mfiPeriod: 14,
+      mfiBullThreshold: 60,
+      mfiBearThreshold: 40,
+      mfiLookback: 12,
+      minMfiSlope: 0.2,
+    },
+  },
 ];
 
 // 测试的波动率场景
@@ -54,15 +97,15 @@ const DRIFT_SCENARIOS = [
   0.5, // 50% 年化（强牛市）
 ];
 
-// 完整实验参数
-const FULL_CANDLE_COUNT = 20000; // K线数量（2万根）
-const FULL_MONTE_CARLO_RUNS = 1000; // 蒙特卡洛运行次数
+// 完整实验参数 - 优化版本
+const FULL_CANDLE_COUNT = 5000; // K线数量（5千根）
+const FULL_MONTE_CARLO_RUNS = 100; // 蒙特卡洛运行次数
 
-// 快速测试参数
-const QUICK_CANDLE_COUNT = 5000; // K线数量（5千根）
-const QUICK_MONTE_CARLO_RUNS = 50; // 蒙特卡洛运行次数
-const QUICK_VOLATILITY_SCENARIOS = [0.05, 0.2];
-const QUICK_DRIFT_SCENARIOS = [0, 0.1];
+// 快速测试参数 - 针对新策略优化
+const QUICK_CANDLE_COUNT = 2000; // K线数量（减少以加快速度）
+const QUICK_MONTE_CARLO_RUNS = 20; // 蒙特卡洛运行次数（减少以加快速度）
+const QUICK_VOLATILITY_SCENARIOS = [0.05];
+const QUICK_DRIFT_SCENARIOS = [0];
 
 // 投注策略配置
 const BETTING_CONFIG: BettingStrategyConfig = {

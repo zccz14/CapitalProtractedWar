@@ -64,7 +64,17 @@ export function generateSignalId(config: SignalStrategyConfig): string {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => `${k}${v}`)
     .join('_');
-  return paramStr ? `${config.type}_${paramStr}` : config.type;
+
+  if (!paramStr) return config.type;
+
+  const fullId = `${config.type}_${paramStr}`;
+  const maxLength = 120;
+  if (fullId.length <= maxLength) {
+    return fullId;
+  }
+
+  const hash = crypto.createHash('sha1').update(paramStr).digest('hex').slice(0, 10);
+  return `${config.type}_h${hash}`;
 }
 
 /**
