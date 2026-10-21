@@ -541,7 +541,7 @@ git clone https://github.com/zccz14/sand-table.git
 cd sand-table
 
 # 安装依赖
-npm install
+pnpm install
 ```
 
 ### 运行实验
@@ -551,47 +551,47 @@ npm install
 ```bash
 # 实验1：基础验证（随机信号 × 5种波动率）
 # 预计时间：~1分钟
-npm run exp1
+pnpm run exp1
 
 # 实验2：信号策略对比（4种策略 × 6种场景 = 24种配置）
 # 预计时间：~5分钟
-npm run exp2
+pnpm run exp2
 
 # 实验3：市场类型对比（4种市场模型）
 # 预计时间：~1分钟
-npm run exp3
+pnpm run exp3
 
 # 实验4：全矩阵扫描（波动率 × 市场 × 信号 = 24种配置）
 # 预计时间：~5分钟
-npm run exp4
+pnpm run exp4
 
 # 实验5：自适应波动率策略
 # 预计时间：~3分钟
-npm run exp5
+pnpm run exp5
 
 # 实验6：K线周期合并（验证√N时间缩放法则）
 # 预计时间：~2分钟
-npm run exp6
+pnpm run exp6
 
 # 实验6b：周期策略综合测试
-npm run exp6b
+pnpm run exp6b
 
 # 实验6c：漂移率测试
-npm run exp6c
+pnpm run exp6c
 
 # 实验6d：市场-策略匹配
-npm run exp6d
+pnpm run exp6d
 
 # 实验7：漂移率×策略矩阵（48种配置）
 # 预计时间：~5分钟
-npm run exp7
+pnpm run exp7
 ```
 
 #### 运行全部实验
 
 ```bash
 # 一次性运行所有基础实验（预计总时间：~20分钟）
-npm run exp1 && npm run exp2 && npm run exp3 && npm run exp4 && npm run exp5 && npm run exp6 && npm run exp7
+pnpm run exp1 && pnpm run exp2 && pnpm run exp3 && pnpm run exp4 && pnpm run exp5 && pnpm run exp6 && pnpm run exp7
 ```
 
 ### 输出说明
@@ -636,7 +636,7 @@ start results/exp2_signals/comparison_report.html
 支持自定义配置运行实验：
 
 ```bash
-npm run cli -- --help
+pnpm run cli -- --help
 ```
 
 ### 可复现性验证
@@ -645,9 +645,9 @@ npm run cli -- --help
 
 ```bash
 # 运行两次实验
-npm run exp1
+pnpm run exp1
 mv results/exp1_basic results/exp1_run1
-npm run exp1
+pnpm run exp1
 
 # 比较两次结果（应该完全相同）
 diff results/exp1_run1/all_results.json results/exp1_basic/all_results.json
